@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="/sales.css">
+<title>Sales & Reports</title>
+</head>
+<body>
+  <!-- NAVBAR -->
+  <nav class="navbar">
+    <div class="brandname">
+      <div class="logo">
+        <div class="logo-img">☕</div>
+      </div>
+      <h2>Gray Countryside Cafe</h2>
+    </div>
+    <div class="logout-container">
+      <button onclick="handleLogout()">Logout</button>
+    </div>
+  </nav>
+
+  <div class="dashboard-container">
+    <!-- Left Column: Dashboard Sidebar -->
+    <div class="sidebar">
+      <div class="search-section">
+        <input type="text" class="search" placeholder="Search..">
+      </div>
+
+      <ul class="dashboard-menu">
+        <li><a href="/admindashboard/dashboard" class=""> Dashboard</a></li>
+        <li><a href="/admindashboard/Inventory">Inventory</a></li>
+        <li><a href="/admindashboard/salesandreports" class="active">Sales Reports</a></li>
+        <li><a href="/admindashboard/orderhistory">Order History</a></li>
+        <li><a href="/admindashboard/addstaff">Add Staff</a></li>
+        <li><a href="/admindashboard/menumanagement">Menu Management</a></li>
+        <li><a href="/admindashboard/infosettings">Settings</a></li>
+      </ul>
+      <footer class="sidebar-footer">
+        &copy; 2026 For School Purposes Only. All rights reserved.
+      </footer>
+    </div>
+
+    <!-- Main Content Area - SALES REPORT -->
+    <div class="main-content">
+      <!-- Sales Report Header -->
+      <div class="sales-report-header">
+        <h1>Sales Report</h1>
+        <div class="report-period" id="reportPeriod">No period selected</div>
+        
+        <!-- Summary Stats -->
+        <div class="summary-stats">
+          <div class="stat-card">
+            <h3>Total Revenue</h3>
+            <div class="stat-value" id="totalRevenueCard">₱0.00</div>
+          </div>
+          <div class="stat-card">
+            <h3>Total Orders</h3>
+            <div class="stat-value" id="totalOrdersCard">0</div>
+            <div class="stat-change" id="ordersChange">No previous data</div>
+          </div>
+          <div class="stat-card">
+            <h3>Total Customers</h3>
+            <div class="stat-value" id="totalCustomersCard">0</div>
+            <div class="stat-change" id="customersChange">No previous data</div>
+          </div>
+          <div class="stat-card">
+            <h3>Average Order Value</h3>
+            <div class="stat-value" id="avgOrderValue">₱0.00</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Gross Profit Section -->
+      <div class="gross-profit-section">
+        <div class="gross-profit-card">
+          <h3>Gross Profit</h3>
+          <div class="profit-value" id="grossProfit">₱0.00</div>
+        </div>
+        <div class="gross-profit-card">
+          <h3>Margin</h3>
+          <div class="margin-value" id="marginValue">0%</div>
+        </div>
+      </div>
+
+      <!-- Sales Overview -->
+      <div class="sales-overview">
+        <h2>Sales Overview</h2>
+        <div class="graph-header">
+          <div><strong id="graphStatus">Loading sales data...</strong></div>
+          <div class="graph-labels">
+            <div class="graph-label">
+              <div class="color-dot blue-dot"></div>
+              <span id="chartSummary">Today: ₱0.00</span>
+            </div>
+          </div>
+        </div>
+        
+        <div class="graph-container">
+          <div class="graph-visual" id="chartBars">
+            <!-- Chart bars will be populated by JavaScript -->
+          </div>
+        </div>
+      </div>
+
+      <!-- Sales Summary Table -->
+      <div class="sales-summary">
+        <h2>Sales Summary</h2>
+        <div class="table-container">
+          <table class="sales-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Orders</th>
+                <th>Revenue</th>
+                <th>Cost</th>
+                <th>Profit</th>
+                <th>Customers</th>
+              </tr>
+            </thead>
+            <tbody id="salesTableBody">
+              <tr>
+                <td colspan="6" style="text-align: center; padding: 20px;">No sales data available</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script src="/script/sales.js"></script>
+<script>
+  function handleLogout() {
+    if (confirm('Are you sure you want to logout?')) {
+      window.location.href = '/login';
+    }
+  }
+</script>
+</body>
+</html>

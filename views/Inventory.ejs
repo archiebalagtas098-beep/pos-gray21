@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inventory Management</title>
+    <link rel="stylesheet" href="/inventory.css">
+</head>
+<body>
+    <div id="toastContainer"></div>
+
+    <div class="dashboard-container">
+        <nav class="navbar">
+            <div class="brandname">
+                <div class="logo">
+                    <img src="/logo.png" alt="Logo" class="logo-img">
+                </div>
+                <h2>Gray Countryside Cafe</h2>
+            </div>
+            <div class="logout-container">
+                <button onclick="handleLogout()">Logout</button>
+            </div>
+        </nav>
+
+        <div class="sidebar">
+            <div class="search-section">
+                <input type="text" class="search" placeholder="Search..">
+            </div>
+            
+            <ul class="dashboard-menu">
+                <li><a href="/admindashboard/dashboard" onclick="showSection('dashboard')" class="active">Dashboard</a></li>
+                <li><a href="/admindashboard/Inventory">Inventory</a></li>
+                <li><a href="/admindashboard/salesandreports">Sales Reports</a></li>
+                <li><a href="/admindashboard/orderhistory">Order History</a></li>
+                <li><a href="/admindashboard/addstaff">Add Staff</a></li>
+                <li><a href="/admindashboard/menumanagement">Menu Management</a></li>
+                <li><a href="/admindashboard/infosettings">Settings</a></li>
+            </ul>
+            <footer class="sidebar-footer">
+                &copy; 2026 For School Purposes Only. All rights reserved.
+            </footer>
+        </div>
+
+        <div class="main-content">
+            <header class="header">
+                <div class="logo-section">
+                    <h1>Inventory Management</h1>
+                </div>
+            </header>
+
+            <div class="container">
+                <aside class="inventory-sidebar">
+                    <div class="nav-section">
+                        <ul class="nav-menu">
+                            <li class="nav-item">
+                                <a href="#" class="nav-link active" data-section="dashboard">
+                                    <span class="nav-icon">Dashboard</span>
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a href="#" class="nav-link" data-section="inventory">
+                                    <span class="nav-icon">Inventory</span>
+                                </a>
+                                <div class="category-list">
+                                    <div class="category-item active" data-category="all">All Raw Ingredients
+                                        <span class="category-count">0</span>
+                                    </div>
+                                    <div class="category-item" data-category="meat">Meat & Poultry
+                                        <span class="category-count">0</span>
+                                    </div>
+                                    <div class="category-item" data-category="seafood">Seafood
+                                        <span class="category-count">0</span>
+                                    </div>
+                                    <div class="category-item" data-category="dairy">Dairy & Eggs
+                                        <span class="category-count">0</span>
+                                    </div>
+                                    <div class="category-item" data-category="produce">Vegetables & Fruits
+                                        <span class="category-count">0</span>
+                                    </div>
+                                    <div class="category-item" data-category="dry">Dry Goods
+                                        <span class="category-count">0</span>
+                                    </div>
+                                    <div class="category-item" data-category="beverage">Beverages
+                                        <span class="category-count">0</span>
+                                    </div>  
+                                    <div class="category-item" data-category="packaging">Packaging
+                                        <span class="category-count">0</span>
+                                    </div>            
+                                </div>
+                            </li>
+                        </ul>
+                    </div>
+                </aside>
+
+                <main class="inventory-content">
+                    <section class="section-content active-section" id="dashboard">
+                        <div class="content-header">
+                            <div class="content-title">
+                                <h2>Inventory Dashboard</h2>
+                            </div>                      
+                        </div>
+
+                        <div class="stats-dashboard">
+                            <div class="stat-card">
+                                <div class="stat-icon">Total Items</div>
+                                <h3>Total Raw Ingredients</h3>
+                                <div class="stat-value" id="allInventoryItems">0</div>
+                                <div class="stat-change">+0 this week</div>
+                            </div>
+                            <div class="stat-card warning">
+                                <div class="stat-icon">Low Stock</div>
+                                <h3>Low Stock Items</h3>
+                                <div class="stat-value" id="lowStock">0</div>
+                                <div class="stat-change negative">+0 this week</div>
+                            </div>
+                            <div class="stat-card critical">
+                                <div class="stat-icon">Out of Stock</div>
+                                <h3>Out of Stock</h3>
+                                <div class="stat-value" id="outOfStock">0</div>
+                                <div class="stat-change">-0 this week</div>
+                            </div>
+                        </div>
+
+                        <div class="inventory-grid" id="dashboardGrid"></div>
+                    </section>
+
+                    <section class="section-content" id="inventory">
+                        <div class="content-header">
+                            <div class="content-title">
+                                <h2>Raw Ingredients Management</h2>
+                            
+                            </div>
+                            <div class="action-buttons">
+                                <button class="btn btn-primary" id="addNewItem">Add New Ingredient</button>
+                            </div>
+                        </div>
+
+                        <div class="inventory-grid" id="inventoryGrid"></div>
+                    </section>
+                </main>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="itemModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modalTitle">Add New Raw Ingredient</h3>
+                <button class="close-btn" id="closeModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="itemForm">
+                    <div class="form-container">
+                        <div class="form-grid">
+                            
+                             <div class="form-group">
+                                <label for="itemCategories">Category</label>
+                                <select id="itemCategories" class="form-control" required>
+                                    <option value="">Select Category</option>
+                                    <option value="meat">Meat & Poultry</option>
+                                    <option value="seafood">Seafood</option>
+                                    <option value="dairy">Dairy & Eggs</option>
+                                    <option value="produce">Vegetables & Fruits</option>
+                                    <option value="dry">Dry Goods</option>
+                                    <option value="beverage">Beverages</option>
+                                    <option value="packaging">Packaging</option>
+                                </select>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="itemName">Ingredient Name</label>
+                                <select id="itemName" class="form-control" required>
+                                    <option value="">Select Ingredient</option>
+                                    <!-- Meat & Poultry (meat) -->
+                                    <option value="Pork slices">Pork slices</option>
+                                    <option value="Pork belly">Pork belly</option>
+                                    <option value="Chicken">Chicken</option>
+                                    <option value="Ground pork">Ground pork</option>
+                                    <option value="Beef shanks and marrow">Beef shanks and marrow</option>
+                                    <option value="Pork face & ears">Pork face & ears</option>
+                                    <option value="Liver">Liver</option>
+                                    <option value="Pork chop">Pork chop</option>
+                                    <option value="Bagnet">Bagnet</option>
+                                    <option value="Pork ribs">Pork ribs</option>
+                                    <option value="Hotdogs">Hotdogs</option>
+                                    <option value="Bacon">Bacon</option>
+                                    <option value="Ham">Ham</option>
+                                    
+                                    <!-- Seafood (seafood) -->
+                                    <option value="Cream dory fillet">Cream dory fillet</option>
+                                    <option value="Shrimp">Shrimp</option>
+                                    <option value="Smoked fish (tinapa)">Smoked fish (tinapa)</option>
+                                    <option value="Dried fish (tuyo)">Dried fish (tuyo)</option>
+                                    
+                                    <!-- Dairy & Eggs (dairy) -->
+                                    <option value="Butter">Butter</option>
+                                    <option value="Eggs">Eggs</option>
+                                    <option value="Milk">Milk</option>
+                                    <option value="Cheese">Cheese</option>
+                                    <option value="Grated cheese">Grated cheese</option>
+                                    <option value="Mayonnaise">Mayonnaise</option>
+                                    <option value="Whipped cream">Whipped cream</option>
+                                    <option value="Cream cheese">Cream cheese</option>
+                                    <option value="Non-dairy creamer">Non-dairy creamer</option>
+                                    <option value="Sour cream">Sour cream</option>
+                                    
+                                    <!-- Vegetables & Fruits (produce) -->
+                                    <option value="Garlic">Garlic</option>
+                                    <option value="Onion">Onion</option>
+                                    <option value="Green onions">Green onions</option>
+                                    <option value="Carrots">Carrots</option>
+                                    <option value="Cabbage">Cabbage</option>
+                                    <option value="Tomato">Tomato</option>
+                                    <option value="Eggplant">Eggplant</option>
+                                    <option value="Cucumber">Cucumber</option>
+                                    <option value="Lettuce">Lettuce</option>
+                                    <option value="Celery">Celery</option>
+                                    <option value="Green beans">Green beans</option>
+                                    <option value="Spring onions">Spring onions</option>
+                                    <option value="Chili peppers">Chili peppers</option>
+                                    <option value="Long green chili (siling haba)">Long green chili (siling haba)</option>
+                                    <option value="Jalapeños">Jalapeños</option>
+                                    <option value="Potato strips">Potato strips</option>
+                                    <option value="Corn on the cob">Corn on the cob</option>
+                                    <option value="Ginger">Ginger</option>
+                                    <option value="Calamansi">Calamansi</option>
+                                    <option value="Lemon">Lemon</option>
+                                    <option value="Mint">Mint</option>
+                                    <option value="Kangkong (water spinach)">Kangkong (water spinach)</option>
+                                    <option value="Radish">Radish</option>
+                                    <option value="Sitaw (long beans)">Sitaw (long beans)</option>
+                                    <option value="Okra">Okra</option>
+                                    <option value="Bitter melon (ampalaya)">Bitter melon (ampalaya)</option>
+                                    <option value="Squash">Squash</option>
+                                    <option value="Pechay (bok choy)">Pechay (bok choy)</option>
+                                    <option value="Basil or malunggay leaves">Basil or malunggay leaves</option>
+                                    <option value="Mixed vegetables (peas, carrots)">Mixed vegetables (peas, carrots)</option>
+                                    
+                                    <!-- Dry Goods (dry) -->
+                                    <option value="Soy sauce">Soy sauce</option>
+                                    <option value="Brown sugar">Brown sugar</option>
+                                    <option value="Gochujang (Korean chili paste)">Gochujang (Korean chili paste)</option>
+                                    <option value="Sesame oil">Sesame oil</option>
+                                    <option value="Sesame seeds">Sesame seeds</option>
+                                    <option value="Salt">Salt</option>
+                                    <option value="Black pepper">Black pepper</option>
+                                    <option value="Whole peppercorns">Whole peppercorns</option>
+                                    <option value="Cornstarch">Cornstarch</option>
+                                    <option value="Cooking oil">Cooking oil</option>
+                                    <option value="Flour">Flour</option>
+                                    <option value="Breadcrumbs">Breadcrumbs</option>
+                                    <option value="Honey">Honey</option>
+                                    <option value="Chili flakes or hot sauce">Chili flakes or hot sauce</option>
+                                    <option value="Vinegar">Vinegar</option>
+                                    <option value="Lumpia wrapper">Lumpia wrapper</option>
+                                    <option value="Bihon/canton noodles">Bihon/canton noodles</option>
+                                    <option value="Spaghetti noodles">Spaghetti noodles</option>
+                                    <option value="Oyster sauce">Oyster sauce</option>
+                                    <option value="Banana ketchup">Banana ketchup</option>
+                                    <option value="Tomato sauce">Tomato sauce</option>
+                                    <option value="Sugar">Sugar</option>
+                                    <option value="Blue curaçao syrup">Blue curaçao syrup</option>
+                                    <option value="Raspberry/red fruit tea powder">Raspberry/red fruit tea powder</option>
+                                    <option value="Espresso">Espresso</option>
+                                    <option value="Vanilla syrup">Vanilla syrup</option>
+                                    <option value="Caramel drizzle">Caramel drizzle</option>
+                                    <option value="Black tea leaves/powder">Black tea leaves/powder</option>
+                                    <option value="Matcha powder">Matcha powder</option>
+                                    <option value="Tapioca pearls (sago)">Tapioca pearls (sago)</option>
+                                    <option value="Sugar syrup">Sugar syrup</option>
+                                    <option value="Chocolate cookies (Oreo)">Chocolate cookies (Oreo)</option>
+                                    <option value="Strawberry syrup">Strawberry syrup</option>
+                                    <option value="Mango syrup/puree">Mango syrup/puree</option>
+                                    <option value="Graham crumbs">Graham crumbs</option>
+                                    <option value="Tortilla chips">Tortilla chips</option>
+                                    <option value="Cheese sauce">Cheese sauce</option>
+                                    <option value="Salsa">Salsa</option>
+                                    <option value="Tartar sauce">Tartar sauce</option>
+                                    <option value="Bread">Bread</option>
+                                    <option value="Nuts (pili or cashew)">Nuts (pili or cashew)</option>
+                                    <option value="Olive oil">Olive oil</option>
+                                    <option value="Jasmine rice">Jasmine rice</option>
+                                    <option value="Tamarind (sampaloc)">Tamarind (sampaloc)</option>
+                                    <option value="Bagoong (fermented shrimp paste)">Bagoong (fermented shrimp paste)</option>
+                                    <option value="Fish sauce (patis)">Fish sauce (patis)</option>
+                                    <option value="Bay leaves">Bay leaves</option>
+                                    <option value="Ice">Ice</option>
+                                    <option value="Water">Water</option>
+                                    
+                                    <!-- Beverages (beverage) -->
+                                    <option value="Sprite/7-Up">Sprite/7-Up</option>
+                                    <option value="Branded soda (Coke, Sprite, Royal)">Branded soda (Coke, Sprite, Royal)</option>
+                                    
+                                    <!-- Packaging (packaging) -->
+                                    <option value="Paper cups">Paper cups</option>
+                                    <option value="Straws">Straws</option>
+                                    <option value="Food containers">Food containers</option>
+                                    <option value="Plastic utensils">Plastic utensils</option>
+                                    <option value="Napkins">Napkins</option>
+                                </select>
+                            </div>
+                           
+                            <div class="form-group">
+                                <label for="itemTypes">Item Type</label>
+                                <select id="itemTypes" class="form-control" required>
+                                    <option value="">Select Type</option>
+                                    <option value="raw">Raw Ingredient</option>   
+                                </select>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="itemUnit">Unit</label>
+                                <select id="itemUnit" class="form-control" required>
+                                    <option value="">Select Unit</option>
+                                    <option value="kg">Kilogram (kg)</option>
+                                    <option value="g">Gram (g)</option>
+                                    <option value="ml">Milliliter (ml)</option>
+                                    <option value="liters">Liters (L)</option>
+                                    <option value="pieces">Pieces</option>
+                                    <option value="packs">Packs</option>
+                                    <option value="bottles">Bottles</option>
+                                </select>
+
+                                 
+                            </div>
+                            
+                           <div class="form-row">
+    <div class="form-group">
+        <label for="currentStock">Current Stock</label>
+        <input type="number" id="currentStock" name="currentStock" min="0" step="0.01" value="0" required>
+    </div>
+</div>
+<div class="form-row">
+    <div class="form-group">
+        <label for="minStock">Min Stock (Alert Level)</label>
+        <input type="number" id="minStock" name="minStock" min="0" step="0.01" value="10" required>
+    </div>
+    <div class="form-group">
+        <label for="maxStock">Max Stock (Capacity)</label>
+        <input type="number" id="maxStock" name="maxStock" min="0" step="0.01" value="50" required>
+    </div>
+</div>
+                            
+                          
+                        </div>
+                        <input type="hidden" id="itemId">
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="cancelBtn">Cancel</button>
+                <button class="btn btn-primary" id="saveItemBtn">Save Ingredient</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/script/inventory.js"></script>
+</body>
+</html>
