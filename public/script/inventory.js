@@ -1,3 +1,58 @@
+// ==================== UI ELEMENTS ====================
+const elements = {
+    // Modal elements
+    itemModal: document.getElementById('itemModal'),
+    modalTitle: document.getElementById('modalTitle'),
+    itemForm: document.getElementById('itemForm'),
+    closeModal: document.getElementById('closeModal'),
+    
+    // Form fields
+    itemId: document.getElementById('itemId'),
+    itemName: document.getElementById('itemName'),
+    itemType: document.getElementById('itemTypes'),
+    itemCategory: document.getElementById('itemCategories'),
+    itemUnit: document.getElementById('itemUnit'),
+    currentStock: document.getElementById('currentStock'),
+    minStock: document.getElementById('minStock'),
+    maxStock: document.getElementById('maxStock'),
+    description: document.getElementById('description'),
+    
+    // Buttons
+    addNewItem: document.getElementById('addNewItem'),
+    saveItemBtn: document.getElementById('saveItemBtn'),
+    cancelBtn: document.getElementById('cancelBtn'),
+    refreshDashboard: document.getElementById('refreshDashboard'),
+    markAllRestocked: document.getElementById('markAllRestocked'),
+    bulkOrder: document.getElementById('bulkOrder'),
+    syncAllBtn: document.getElementById('syncAllBtn'),
+    showMappingsBtn: document.getElementById('showMappingsBtn'),
+    clearAllDataBtn: document.getElementById('clearAllDataBtn'),
+    
+    // Grid containers
+    inventoryGrid: document.getElementById('inventoryGrid'),
+    dashboardGrid: document.getElementById('dashboardGrid'),
+    restockGrid: document.getElementById('restockGrid'),
+    
+    // Dashboard stats
+    totalItems: document.getElementById('totalItems'),
+    lowStock: document.getElementById('lowStock'),
+    outOfStock: document.getElementById('outOfStock'),
+    totalProducts: document.getElementById('totalProducts'),
+    inventoryValue: document.getElementById('inventoryValue'),
+    
+    // Navigation
+    navLinks: document.querySelectorAll('.nav-link[data-section]'),
+    categoryItems: document.querySelectorAll('.category-item[data-category]'),
+    
+    // Info displays
+    rawIngredientsList: document.getElementById('rawIngredientsList'),
+    mappingStatus: document.getElementById('mappingStatus'),
+    recipeInfo: document.getElementById('recipeInfo'),
+    
+    // Search
+    searchInput: document.getElementById('searchInventory')
+};
+
 // ==================== INVENTORY DATA CONFIGURATION ====================
 const validRawIngredients = {
     'Pork slices': 'meat',
@@ -653,61 +708,6 @@ let currentSection = 'dashboard';
 let currentCategory = 'all';
 let isModalOpen = false;
 
-// ==================== UI ELEMENTS ====================
-const elements = {
-    // Modal elements
-    itemModal: document.getElementById('itemModal'),
-    modalTitle: document.getElementById('modalTitle'),
-    itemForm: document.getElementById('itemForm'),
-    closeModal: document.getElementById('closeModal'),
-    
-    // Form fields
-    itemId: document.getElementById('itemId'),
-    itemName: document.getElementById('itemName'),
-    itemType: document.getElementById('itemTypes'),
-    itemCategory: document.getElementById('itemCategories'),
-    itemUnit: document.getElementById('itemUnit'),
-    currentStock: document.getElementById('currentStock'),
-    minStock: document.getElementById('minStock'),
-    maxStock: document.getElementById('maxStock'),
-    description: document.getElementById('description'),
-    
-    // Buttons
-    addNewItem: document.getElementById('addNewItem'),
-    saveItemBtn: document.getElementById('saveItemBtn'),
-    cancelBtn: document.getElementById('cancelBtn'),
-    refreshDashboard: document.getElementById('refreshDashboard'),
-    markAllRestocked: document.getElementById('markAllRestocked'),
-    bulkOrder: document.getElementById('bulkOrder'),
-    syncAllBtn: document.getElementById('syncAllBtn'),
-    showMappingsBtn: document.getElementById('showMappingsBtn'),
-    clearAllDataBtn: document.getElementById('clearAllDataBtn'),
-    
-    // Grid containers
-    inventoryGrid: document.getElementById('inventoryGrid'),
-    dashboardGrid: document.getElementById('dashboardGrid'),
-    restockGrid: document.getElementById('restockGrid'),
-    
-    // Dashboard stats
-    totalItems: document.getElementById('totalItems'),
-    lowStock: document.getElementById('lowStock'),
-    outOfStock: document.getElementById('outOfStock'),
-    totalProducts: document.getElementById('totalProducts'),
-    inventoryValue: document.getElementById('inventoryValue'),
-    
-    // Navigation
-    navLinks: document.querySelectorAll('.nav-link[data-section]'),
-    categoryItems: document.querySelectorAll('.category-item[data-category]'),
-    
-    // Info displays
-    rawIngredientsList: document.getElementById('rawIngredientsList'),
-    mappingStatus: document.getElementById('mappingStatus'),
-    recipeInfo: document.getElementById('recipeInfo'),
-    
-    // Search
-    searchInput: document.getElementById('searchInventory')
-};
-
 // ==================== UTILITY FUNCTIONS ====================
 function getItemTypeFromName(itemName) {
     return 'raw'; // Always raw since we only have raw ingredients
@@ -823,71 +823,6 @@ async function clearAllInventoryData() {
     } catch (error) {
         console.error('Error clearing inventory data:', error);
         showToast('Failed to clear inventory data: ' + error.message, 'error');
-    } finally {
-        hideLoading();
-    }
-}
-
-async function removeAllSampleData() {
-    try {
-        const confirmation = confirm('⚠️ This will remove all sample/test/demo items. Continue?');
-        if (!confirmation) return;
-
-        showLoading('Removing sample data...');
-
-        const response = await fetch('/api/inventory', {
-            method: 'GET',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include'
-        });
-
-        const data = await response.json();
-        
-        if (!response.ok) {
-            throw new Error(data.message || 'Failed to fetch inventory items');
-        }
-
-        if (data.success) {
-            const sampleItems = data.data.filter(item => {
-                const name = item.itemName.toLowerCase();
-                return name.includes('sample') || 
-                       name.includes('test') || 
-                       name.includes('demo') ||
-                       item.itemType !== 'raw';
-            });
-
-            if (sampleItems.length === 0) {
-                showToast('No sample data found.', 'info');
-                return;
-            }
-
-            let deletedCount = 0;
-            for (const item of sampleItems) {
-                try {
-                    const deleteResponse = await fetch(`/api/inventory/${item._id}`, {
-                        method: 'DELETE',
-                        headers: { 'Content-Type': 'application/json' },
-                        credentials: 'include'
-                    });
-
-                    const deleteData = await deleteResponse.json();
-                    
-                    if (deleteResponse.ok && deleteData.success) {
-                        deletedCount++;
-                    }
-                } catch (error) {
-                    console.warn(`Error deleting sample item ${item.itemName}:`, error);
-                }
-            }
-
-            // Refresh data
-            await fetchInventoryItems();
-            
-            showToast(`✅ Removed ${deletedCount} sample items.`, 'success');
-        }
-    } catch (error) {
-        console.error('Error removing sample data:', error);
-        showToast('Failed to remove sample data', 'error');
     } finally {
         hideLoading();
     }
@@ -1344,17 +1279,12 @@ async function fetchInventoryItems() {
         if (!response.ok) throw new Error(data.message || 'Failed to fetch inventory items');
         
         if (data.success) {
-            // Filter out any sample data and non-raw items
+            // Filter out any items that are not valid raw ingredients
             allInventoryItems = data.data
                 .filter(item => {
-                    // Remove sample/test/demo items
-                    const isSample = 
-                        item.itemName.toLowerCase().includes('sample') ||
-                        item.itemName.toLowerCase().includes('test') ||
-                        item.itemName.toLowerCase().includes('demo') ||
-                        item.itemType !== 'raw'; // Only keep raw ingredients
-                    
-                    return !isSample;
+                    // Only keep valid raw ingredients
+                    return item.itemType === 'raw' && 
+                           validRawIngredients.hasOwnProperty(item.itemName);
                 })
                 .map(item => ({
                     ...item,
@@ -1362,7 +1292,7 @@ async function fetchInventoryItems() {
                     minStock: parseFloat(item.minStock) || 10,
                     currentStock: parseFloat(item.currentStock) || 0,
                     unit: item.unit || 'pieces',
-                    category: item.category || 'dry',
+                    category: item.category || getCategoryFromName(item.itemName),
                     itemType: item.itemType || 'raw'
                 }));
             
@@ -2420,4 +2350,3 @@ window.filterByCategory = filterByCategory;
 window.showSection = showSection;
 window.submitRestock = submitRestock;
 window.clearAllInventoryData = clearAllInventoryData;
-window.removeAllSampleData = removeAllSampleData;

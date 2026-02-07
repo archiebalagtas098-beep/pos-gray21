@@ -30,552 +30,122 @@ const LOW_STOCK_THRESHOLD = 5;
 
 await connectDB();
 
-// Comprehensive Recipe Mapping
 const recipeMapping = {
-    // Meat & Poultry (meat category)
-    'Chicken': [
-        'Buttered Honey Chicken', 
-        'Buttered Spicy Chicken', 
-        'Chicken Adobo', 
-        'Fried Chicken', 
-        'Sizzling Fried Chicken',
-        'Budget Meal: Fried Chicken',
-        'Budget Meal: Buttered Honey Chicken',
-        'Budget Meal: Buttered Spicy Chicken'
-    ],
-    'Pork slices': [
-        'Korean Spicy Bulgogi (Pork)', 
-        'Korean Salt and Pepper (Pork)', 
-        'Crispy Pork Lechon Kawali',
-        'Sizzling Pork Sisig', 
-        'Sizzling Liempo', 
-        'Sizzling Porkchop',
-        'Sinigang (PORK)',
-        'Pork Shanghai',
-        'Pork Adobo'
-    ],
-    'Pork belly': [
-        'Crispy Pork Lechon Kawali',
-        'Sizzling Pork Sisig',
-        'Sizzling Liempo',
-        'Paknet (Pakbet w/ Bagnet)'
-    ],
-    'Ground pork': [
-        'Pork Shanghai',
-        'Sizzling Pork Sisig',
-        'Lumpiang Shanghai'
-    ],
-    'Bagnet': [
-        'Paknet (Pakbet w/ Bagnet)'
-    ],
-    'Pork ribs': [
-        'Sinigang (PORK)'
-    ],
-    'Pork face & ears': [
-        'Sizzling Pork Sisig'
-    ],
-    'Liver': [
-        'Sizzling Pork Sisig'
-    ],
-    'Pork chop': [
-        'Sizzling Porkchop'
-    ],
-    'Hotdogs': [
-        'Spaghetti (S)',
-        'Spaghetti (M)',
-        'Spaghetti (L)'
-    ],
-    'Bacon': [
-        'Clubhouse Sandwich'
-    ],
-    'Ham': [
-        'Clubhouse Sandwich'
-    ],
-    'Beef shanks and marrow': [
-        'Special Bulalo (good for 2-3 Persons)',
-        'Special Bulalo Buy 1 Take 1 (good for 6-8 Persons)'
-    ],
-    
-    // Seafood (seafood category)
-    'Cream dory fillet': [
-        'Cream Dory Fish Fillet',
-        'Fish and Fries'
-    ],
-    'Shrimp': [
-        'Buttered Shrimp',
-        'Sinigang (Shrimp)'
-    ],
-    'Smoked fish (tinapa)': [
-        'Tinapa Rice'
-    ],
-    'Dried fish (tuyo)': [
-        'Tuyo Pesto'
-    ],
-    
-    // Dairy & Eggs (dairy category)
-    'Butter': [
-        'Buttered Honey Chicken',
-        'Buttered Spicy Chicken',
-        'Buttered Shrimp',
-        'French fries'
-    ],
-    'Eggs': [
-        'Clubhouse Sandwich',
-        'Lumpiang Shanghai',
-        'Pork Shanghai'
-    ],
-    'Cheese': [
-        'Cheesy Nachos',
-        'Nachos Supreme',
-        'Cheesy Dynamite Lumpia',
-        'Clubhouse Sandwich'
-    ],
-    'Grated cheese': [
-        'Cheesy Nachos',
-        'Nachos Supreme',
-        'Cheesy Dynamite Lumpia'
-    ],
-    'Mayonnaise': [
-        'Clubhouse Sandwich'
-    ],
-    'Whipped cream': [
-        'Cookies & Cream HC',
-        'Cookies & Cream MC',
-        'Strawberry & Cream HC',
-        'Mango cheese cake HC'
-    ],
-    'Cream cheese': [
-        'Mango cheese cake HC'
-    ],
-    'Sour cream': [
-        'Nachos Supreme'
-    ],
-    'Non-dairy creamer': [
-        'Milk Tea Regular HC',
-        'Milk Tea Regular MC',
-        'Cafe Latte Tall',
-        'Cafe Latte Grande',
-        'Caramel Macchiato Tall',
-        'Caramel Macchiato Grande',
-        'Matcha Green Tea HC',
-        'Matcha Green Tea MC'
-    ],
-    'Milk': [
-        'Milk Tea Regular HC',
-        'Milk Tea Regular MC',
-        'Cafe Latte Tall',
-        'Cafe Latte Grande',
-        'Caramel Macchiato Tall',
-        'Caramel Macchiato Grande',
-        'Matcha Green Tea HC',
-        'Matcha Green Tea MC'
-    ],
-    
-    // Vegetables & Fruits (produce category)
-    'Garlic': [
-        'Chicken Adobo',
-        'Pork Adobo',
-        'Korean Spicy Bulgogi (Pork)',
-        'Korean Salt and Pepper (Pork)',
-        'Buttered Shrimp',
-        'Sinigang (PORK)',
-        'Sinigang (Shrimp)',
-        'Paknet (Pakbet w/ Bagnet)'
-    ],
-    'Onion': [
-        'Chicken Adobo',
-        'Pork Adobo',
-        'Korean Spicy Bulgogi (Pork)',
-        'Korean Salt and Pepper (Pork)',
-        'Sinigang (PORK)',
-        'Sinigang (Shrimp)',
-        'Paknet (Pakbet w/ Bagnet)',
-        'Clubhouse Sandwich'
-    ],
-    'Green onions': [
-        'Korean Spicy Bulgogi (Pork)',
-        'Korean Salt and Pepper (Pork)'
-    ],
-    'Carrots': [
-        'Pancit Bihon (S)',
-        'Pancit Bihon (M)',
-        'Pancit Bihon (L)',
-        'Pancit Canton (S)',
-        'Pancit Canton (M)',
-        'Pancit Canton (L)',
-        'Sinigang (PORK)',
-        'Sinigang (Shrimp)',
-        'Paknet (Pakbet w/ Bagnet)'
-    ],
-    'Cabbage': [
-        'Pancit Bihon (S)',
-        'Pancit Bihon (M)',
-        'Pancit Bihon (L)',
-        'Pancit Canton (S)',
-        'Pancit Canton (M)',
-        'Pancit Canton (L)',
-        'Sinigang (PORK)',
-        'Sinigang (Shrimp)',
-        'Paknet (Pakbet w/ Bagnet)'
-    ],
-    'Tomato': [
-        'Sinigang (PORK)',
-        'Sinigang (Shrimp)',
-        'Paknet (Pakbet w/ Bagnet)',
-        'Clubhouse Sandwich'
-    ],
-    'Eggplant': [
-        'Paknet (Pakbet w/ Bagnet)'
-    ],
-    'Cucumber': [
-        'Cucumber Lemonade (Glass)',
-        'Cucumber Lemonade (Pitcher)',
-        'Clubhouse Sandwich'
-    ],
-    'Lettuce': [
-        'Clubhouse Sandwich'
-    ],
-    'Celery': [
-        'Sinigang (PORK)',
-        'Sinigang (Shrimp)'
-    ],
-    'Green beans': [
-        'Paknet (Pakbet w/ Bagnet)'
-    ],
-    'Spring onions': [
-        'Korean Spicy Bulgogi (Pork)',
-        'Korean Salt and Pepper (Pork)'
-    ],
-    'Chili peppers': [
-        'Buttered Spicy Chicken',
-        'Budget Meal: Buttered Spicy Chicken'
-    ],
-    'Long green chili (siling haba)': [
-        'Cheesy Dynamite Lumpia'
-    ],
-    'Jalapeños': [
-        'Nachos Supreme'
-    ],
-    'Potato strips': [
-        'Fish and Fries',
-        'French fries'
-    ],
-    'Corn on the cob': [
-        'Sinigang (PORK)',
-        'Sinigang (Shrimp)'
-    ],
-    'Ginger': [
-        'Sinigang (PORK)',
-        'Sinigang (Shrimp)'
-    ],
-    'Calamansi': [
-        'Sinigang (PORK)',
-        'Sinigang (Shrimp)',
-        'Various Filipino dishes'
-    ],
-    'Lemon': [
-        'Cucumber Lemonade (Glass)',
-        'Cucumber Lemonade (Pitcher)',
-        'Blue Lemonade (Glass)',
-        'Blue Lemonade (Pitcher)'
-    ],
-    'Mint': [
-        'Cucumber Lemonade (Glass)',
-        'Cucumber Lemonade (Pitcher)',
-        'Blue Lemonade (Glass)',
-        'Blue Lemonade (Pitcher)'
-    ],
-    'Kangkong (water spinach)': [
-        'Sinigang (PORK)',
-        'Sinigang (Shrimp)'
-    ],
-    'Radish': [
-        'Sinigang (PORK)',
-        'Sinigang (Shrimp)'
-    ],
-    'Sitaw (long beans)': [
-        'Paknet (Pakbet w/ Bagnet)'
-    ],
-    'Okra': [
-        'Sinigang (PORK)',
-        'Sinigang (Shrimp)'
-    ],
-    'Bitter melon (ampalaya)': [
-        'Paknet (Pakbet w/ Bagnet)'
-    ],
-    'Squash': [
-        'Paknet (Pakbet w/ Bagnet)'
-    ],
-    'Pechay (bok choy)': [
-        'Sinigang (PORK)',
-        'Sinigang (Shrimp)'
-    ],
-    'Basil or malunggay leaves': [
-        'Sinigang (PORK)',
-        'Sinigang (Shrimp)'
-    ],
-    'Mixed vegetables (peas, carrots)': [
-        'Paknet (Pakbet w/ Bagnet)'
-    ],
-    
-    // Dry Goods (dry category)
-    'Soy sauce': [
-        'Chicken Adobo',
-        'Pork Adobo',
-        'Korean Spicy Bulgogi (Pork)'
-    ],
-    'Brown sugar': [
-        'Korean Spicy Bulgogi (Pork)',
-        'Korean Salt and Pepper (Pork)'
-    ],
-    'Gochujang (Korean chili paste)': [
-        'Korean Spicy Bulgogi (Pork)'
-    ],
-    'Sesame oil': [
-        'Korean Spicy Bulgogi (Pork)',
-        'Korean Salt and Pepper (Pork)'
-    ],
-    'Sesame seeds': [
-        'Korean Spicy Bulgogi (Pork)',
-        'Korean Salt and Pepper (Pork)'
-    ],
-    'Salt': [
-        'All dishes'
-    ],
-    'Black pepper': [
-        'All savory dishes'
-    ],
-    'Whole peppercorns': [
-        'Sinigang (PORK)',
-        'Sinigang (Shrimp)',
-        'Special Bulalo (good for 2-3 Persons)',
-        'Special Bulalo Buy 1 Take 1 (good for 6-8 Persons)'
-    ],
-    'Cornstarch': [
-        'Crispy Pork Lechon Kawali',
-        'Fried Chicken',
-        'Cream Dory Fish Fillet'
-    ],
-    'Cooking oil': [
-        'Fried Chicken',
-        'Crispy Pork Lechon Kawali',
-        'Sizzling Fried Chicken',
-        'Sizzling Pork Sisig',
-        'Sizzling Liempo',
-        'Sizzling Porkchop',
-        'Cream Dory Fish Fillet',
-        'Fish and Fries',
-        'French fries',
-        'Lumpiang Shanghai',
-        'Pork Shanghai'
-    ],
-    'Flour': [
-        'Crispy Pork Lechon Kawali',
-        'Fried Chicken',
-        'Cream Dory Fish Fillet'
-    ],
-    'Breadcrumbs': [
-        'Crispy Pork Lechon Kawali',
-        'Fried Chicken'
-    ],
-    'Honey': [
-        'Buttered Honey Chicken',
-        'Budget Meal: Buttered Honey Chicken'
-    ],
-    'Chili flakes or hot sauce': [
-        'Buttered Spicy Chicken',
-        'Budget Meal: Buttered Spicy Chicken',
-        'Nachos Supreme'
-    ],
-    'Vinegar': [
-        'Chicken Adobo',
-        'Pork Adobo',
-        'Sizzling Pork Sisig'
-    ],
-    'Lumpia wrapper': [
-        'Lumpiang Shanghai',
-        'Cheesy Dynamite Lumpia'
-    ],
-    'Bihon/canton noodles': [
-        'Pancit Bihon (S)',
-        'Pancit Bihon (M)',
-        'Pancit Bihon (L)',
-        'Pancit Canton (S)',
-        'Pancit Canton (M)',
-        'Pancit Canton (L)'
-    ],
-    'Spaghetti noodles': [
-        'Spaghetti (S)',
-        'Spaghetti (M)',
-        'Spaghetti (L)'
-    ],
-    'Oyster sauce': [
-        'Korean Spicy Bulgogi (Pork)',
-        'Korean Salt and Pepper (Pork)'
-    ],
-    'Banana ketchup': [
-        'Spaghetti (S)',
-        'Spaghetti (M)',
-        'Spaghetti (L)'
-    ],
-    'Tomato sauce': [
-        'Spaghetti (S)',
-        'Spaghetti (M)',
-        'Spaghetti (L)'
-    ],
-    'Sugar': [
-        'All beverages',
-        'Various dishes'
-    ],
-    'Blue curaçao syrup': [
-        'Blue Lemonade (Glass)',
-        'Blue Lemonade (Pitcher)'
-    ],
-    'Raspberry/red fruit tea powder': [
-        'Red Tea (Glass)'
-    ],
-    'Espresso': [
-        'Cafe Americano Tall',
-        'Cafe Americano Grande',
-        'Cafe Latte Tall',
-        'Cafe Latte Grande',
-        'Caramel Macchiato Tall',
-        'Caramel Macchiato Grande'
-    ],
-    'Vanilla syrup': [
-        'Caramel Macchiato Tall',
-        'Caramel Macchiato Grande'
-    ],
-    'Caramel drizzle': [
-        'Caramel Macchiato Tall',
-        'Caramel Macchiato Grande'
-    ],
-    'Black tea leaves/powder': [
-        'Milk Tea Regular HC',
-        'Milk Tea Regular MC'
-    ],
-    'Matcha powder': [
-        'Matcha Green Tea HC',
-        'Matcha Green Tea MC',
-        'Matcha Green Tea HC Frappe',
-        'Matcha Green Tea MC Frappe'
-    ],
-    'Tapioca pearls (sago)': [
-        'Milk Tea Regular HC',
-        'Milk Tea Regular MC'
-    ],
-    'Sugar syrup': [
-        'All Beverages'
-    ],
-    'Chocolate cookies (Oreo)': [
-        'Cookies & Cream HC',
-        'Cookies & Cream MC'
-    ],
-    'Strawberry syrup': [
-        'Strawberry & Cream HC'
-    ],
-    'Mango syrup/puree': [
-        'Mango cheese cake HC'
-    ],
-    'Graham crumbs': [
-        'Mango cheese cake HC'
-    ],
-    'Tortilla chips': [
-        'Cheesy Nachos',
-        'Nachos Supreme'
-    ],
-    'Cheese sauce': [
-        'Cheesy Nachos',
-        'Nachos Supreme'
-    ],
-    'Salsa': [
-        'Nachos Supreme'
-    ],
-    'Tartar sauce': [
-        'Fish and Fries'
-    ],
-    'Bread': [
-        'Clubhouse Sandwich'
-    ],
-    'Nuts (pili or cashew)': [
-        'Special Bulalo (good for 2-3 Persons)',
-        'Special Bulalo Buy 1 Take 1 (good for 6-8 Persons)'
-    ],
-    'Olive oil': [
-        'Clubhouse Sandwich'
-    ],
-    'Jasmine rice': [
-        'All Rice-based dishes',
-        'Fried Rice',
-        'Plain Rice',
-        'Tinapa Rice',
-        'Tuyo Pesto'
-    ],
-    'Tamarind (sampaloc)': [
-        'Sinigang (PORK)',
-        'Sinigang (Shrimp)'
-    ],
-    'Bagoong (fermented shrimp paste)': [
-        'Paknet (Pakbet w/ Bagnet)'
-    ],
-    'Fish sauce (patis)': [
-        'Sinigang (PORK)',
-        'Sinigang (Shrimp)',
-        'Paknet (Pakbet w/ Bagnet)'
-    ],
-    'Bay leaves': [
-        'Sinigang (PORK)',
-        'Sinigang (Shrimp)',
-        'Special Bulalo (good for 2-3 Persons)',
-        'Special Bulalo Buy 1 Take 1 (good for 6-8 Persons)'
-    ],
-    'Ice': [
-        'All cold beverages',
-        'Frappe drinks'
-    ],
-    'Water': [
-        'All dishes and beverages'
-    ],
-    
-    // Beverages (beverage category)
-    'Sprite/7-Up': [
-        'Soda (Mismo)',
-        'Soda 1.5L'
-    ],
-    'Branded soda (Coke, Sprite, Royal)': [
-        'Soda (Mismo)',
-        'Soda 1.5L'
-    ],
-    
-    // Packaging (packaging category)
-    'Paper cups': [
-        'All beverage servings',
-        'Milk Tea',
-        'Coffee drinks',
-        'Frappe'
-    ],
-    'Straws': [
-        'All beverage servings',
-        'Milk Tea',
-        'Coffee drinks',
-        'Frappe'
-    ],
-    'Food containers': [
-        'All takeout orders',
-        'Budget meals packaging',
-        'Party trays'
-    ],
-    'Plastic utensils': [
-        'All food orders',
-        'Takeout packaging'
-    ],
-    'Napkins': [
-        'All orders',
-        'Customer service'
-    ]
+    'Chicken': ['Buttered Honey Chicken', 'Buttered Spicy Chicken', 'Chicken Adobo', 'Fried Chicken', 'Sizzling Fried Chicken', 'Budget Meal: Fried Chicken', 'Budget Meal: Buttered Honey Chicken', 'Budget Meal: Buttered Spicy Chicken'],
+    'Pork slices': ['Korean Spicy Bulgogi (Pork)', 'Korean Salt and Pepper (Pork)', 'Crispy Pork Lechon Kawali', 'Sizzling Pork Sisig', 'Sizzling Liempo', 'Sizzling Porkchop', 'Sinigang (PORK)', 'Pork Shanghai', 'Pork Adobo'],
+    'Pork belly': ['Crispy Pork Lechon Kawali', 'Sizzling Pork Sisig', 'Sizzling Liempo', 'Paknet (Pakbet w/ Bagnet)'],
+    'Ground pork': ['Pork Shanghai', 'Sizzling Pork Sisig', 'Lumpiang Shanghai'],
+    'Bagnet': ['Paknet (Pakbet w/ Bagnet)'],
+    'Pork ribs': ['Sinigang (PORK)'],
+    'Pork face & ears': ['Sizzling Pork Sisig'],
+    'Liver': ['Sizzling Pork Sisig'],
+    'Pork chop': ['Sizzling Porkchop'],
+    'Hotdogs': ['Spaghetti (S)', 'Spaghetti (M)', 'Spaghetti (L)'],
+    'Bacon': ['Clubhouse Sandwich'],
+    'Ham': ['Clubhouse Sandwich'],
+    'Beef shanks and marrow': ['Special Bulalo (good for 2-3 Persons)', 'Special Bulalo Buy 1 Take 1 (good for 6-8 Persons)'],
+    'Cream dory fillet': ['Cream Dory Fish Fillet', 'Fish and Fries'],
+    'Shrimp': ['Buttered Shrimp', 'Sinigang (Shrimp)'],
+    'Smoked fish (tinapa)': ['Tinapa Rice'],
+    'Dried fish (tuyo)': ['Tuyo Pesto'],
+    'Butter': ['Buttered Honey Chicken', 'Buttered Spicy Chicken', 'Buttered Shrimp', 'French fries'],
+    'Eggs': ['Clubhouse Sandwich', 'Lumpiang Shanghai', 'Pork Shanghai'],
+    'Cheese': ['Cheesy Nachos', 'Nachos Supreme', 'Cheesy Dynamite Lumpia', 'Clubhouse Sandwich'],
+    'Grated cheese': ['Cheesy Nachos', 'Nachos Supreme', 'Cheesy Dynamite Lumpia'],
+    'Mayonnaise': ['Clubhouse Sandwich'],
+    'Whipped cream': ['Cookies & Cream HC', 'Cookies & Cream MC', 'Strawberry & Cream HC', 'Mango cheese cake HC'],
+    'Cream cheese': ['Mango cheese cake HC'],
+    'Sour cream': ['Nachos Supreme'],
+    'Non-dairy creamer': ['Milk Tea Regular HC', 'Milk Tea Regular MC', 'Cafe Latte Tall', 'Cafe Latte Grande', 'Caramel Macchiato Tall', 'Caramel Macchiato Grande', 'Matcha Green Tea HC', 'Matcha Green Tea MC'],
+    'Milk': ['Milk Tea Regular HC', 'Milk Tea Regular MC', 'Cafe Latte Tall', 'Cafe Latte Grande', 'Caramel Macchiato Tall', 'Caramel Macchiato Grande', 'Matcha Green Tea HC', 'Matcha Green Tea MC'],
+    'Garlic': ['Chicken Adobo', 'Pork Adobo', 'Korean Spicy Bulgogi (Pork)', 'Korean Salt and Pepper (Pork)', 'Buttered Shrimp', 'Sinigang (PORK)', 'Sinigang (Shrimp)', 'Paknet (Pakbet w/ Bagnet)'],
+    'Onion': ['Chicken Adobo', 'Pork Adobo', 'Korean Spicy Bulgogi (Pork)', 'Korean Salt and Pepper (Pork)', 'Sinigang (PORK)', 'Sinigang (Shrimp)', 'Paknet (Pakbet w/ Bagnet)', 'Clubhouse Sandwich'],
+    'Green onions': ['Korean Spicy Bulgogi (Pork)', 'Korean Salt and Pepper (Pork)'],
+    'Carrots': ['Pancit Bihon (S)', 'Pancit Bihon (M)', 'Pancit Bihon (L)', 'Pancit Canton (S)', 'Pancit Canton (M)', 'Pancit Canton (L)', 'Sinigang (PORK)', 'Sinigang (Shrimp)', 'Paknet (Pakbet w/ Bagnet)'],
+    'Cabbage': ['Pancit Bihon (S)', 'Pancit Bihon (M)', 'Pancit Bihon (L)', 'Pancit Canton (S)', 'Pancit Canton (M)', 'Pancit Canton (L)', 'Sinigang (PORK)', 'Sinigang (Shrimp)', 'Paknet (Pakbet w/ Bagnet)'],
+    'Tomato': ['Sinigang (PORK)', 'Sinigang (Shrimp)', 'Paknet (Pakbet w/ Bagnet)', 'Clubhouse Sandwich'],
+    'Eggplant': ['Paknet (Pakbet w/ Bagnet)'],
+    'Cucumber': ['Cucumber Lemonade (Glass)', 'Cucumber Lemonade (Pitcher)', 'Clubhouse Sandwich'],
+    'Lettuce': ['Clubhouse Sandwich'],
+    'Celery': ['Sinigang (PORK)', 'Sinigang (Shrimp)'],
+    'Green beans': ['Paknet (Pakbet w/ Bagnet)'],
+    'Spring onions': ['Korean Spicy Bulgogi (Pork)', 'Korean Salt and Pepper (Pork)'],
+    'Chili peppers': ['Buttered Spicy Chicken', 'Budget Meal: Buttered Spicy Chicken'],
+    'Long green chili (siling haba)': ['Cheesy Dynamite Lumpia'],
+    'Jalapeños': ['Nachos Supreme'],
+    'Potato strips': ['Fish and Fries', 'French fries'],
+    'Corn on the cob': ['Sinigang (PORK)', 'Sinigang (Shrimp)'],
+    'Ginger': ['Sinigang (PORK)', 'Sinigang (Shrimp)'],
+    'Calamansi': ['Sinigang (PORK)', 'Sinigang (Shrimp)', 'Various Filipino dishes'],
+    'Lemon': ['Cucumber Lemonade (Glass)', 'Cucumber Lemonade (Pitcher)', 'Blue Lemonade (Glass)', 'Blue Lemonade (Pitcher)'],
+    'Mint': ['Cucumber Lemonade (Glass)', 'Cucumber Lemonade (Pitcher)', 'Blue Lemonade (Glass)', 'Blue Lemonade (Pitcher)'],
+    'Kangkong (water spinach)': ['Sinigang (PORK)', 'Sinigang (Shrimp)'],
+    'Radish': ['Sinigang (PORK)', 'Sinigang (Shrimp)'],
+    'Sitaw (long beans)': ['Paknet (Pakbet w/ Bagnet)'],
+    'Okra': ['Sinigang (PORK)', 'Sinigang (Shrimp)'],
+    'Bitter melon (ampalaya)': ['Paknet (Pakbet w/ Bagnet)'],
+    'Squash': ['Paknet (Pakbet w/ Bagnet)'],
+    'Pechay (bok choy)': ['Sinigang (PORK)', 'Sinigang (Shrimp)'],
+    'Basil or malunggay leaves': ['Sinigang (PORK)', 'Sinigang (Shrimp)'],
+    'Mixed vegetables (peas, carrots)': ['Paknet (Pakbet w/ Bagnet)'],
+    'Soy sauce': ['Chicken Adobo', 'Pork Adobo', 'Korean Spicy Bulgogi (Pork)'],
+    'Brown sugar': ['Korean Spicy Bulgogi (Pork)', 'Korean Salt and Pepper (Pork)'],
+    'Gochujang (Korean chili paste)': ['Korean Spicy Bulgogi (Pork)'],
+    'Sesame oil': ['Korean Spicy Bulgogi (Pork)', 'Korean Salt and Pepper (Pork)'],
+    'Sesame seeds': ['Korean Spicy Bulgogi (Pork)', 'Korean Salt and Pepper (Pork)'],
+    'Salt': ['All dishes'],
+    'Black pepper': ['All savory dishes'],
+    'Whole peppercorns': ['Sinigang (PORK)', 'Sinigang (Shrimp)', 'Special Bulalo (good for 2-3 Persons)', 'Special Bulalo Buy 1 Take 1 (good for 6-8 Persons)'],
+    'Cornstarch': ['Crispy Pork Lechon Kawali', 'Fried Chicken', 'Cream Dory Fish Fillet'],
+    'Cooking oil': ['Fried Chicken', 'Crispy Pork Lechon Kawali', 'Sizzling Fried Chicken', 'Sizzling Pork Sisig', 'Sizzling Liempo', 'Sizzling Porkchop', 'Cream Dory Fish Fillet', 'Fish and Fries', 'French fries', 'Lumpiang Shanghai', 'Pork Shanghai'],
+    'Flour': ['Crispy Pork Lechon Kawali', 'Fried Chicken', 'Cream Dory Fish Fillet'],
+    'Breadcrumbs': ['Crispy Pork Lechon Kawali', 'Fried Chicken'],
+    'Honey': ['Buttered Honey Chicken', 'Budget Meal: Buttered Honey Chicken'],
+    'Chili flakes or hot sauce': ['Buttered Spicy Chicken', 'Budget Meal: Buttered Spicy Chicken', 'Nachos Supreme'],
+    'Vinegar': ['Chicken Adobo', 'Pork Adobo', 'Sizzling Pork Sisig'],
+    'Lumpia wrapper': ['Lumpiang Shanghai', 'Cheesy Dynamite Lumpia'],
+    'Bihon/canton noodles': ['Pancit Bihon (S)', 'Pancit Bihon (M)', 'Pancit Bihon (L)', 'Pancit Canton (S)', 'Pancit Canton (M)', 'Pancit Canton (L)'],
+    'Spaghetti noodles': ['Spaghetti (S)', 'Spaghetti (M)', 'Spaghetti (L)'],
+    'Oyster sauce': ['Korean Spicy Bulgogi (Pork)', 'Korean Salt and Pepper (Pork)'],
+    'Banana ketchup': ['Spaghetti (S)', 'Spaghetti (M)', 'Spaghetti (L)'],
+    'Tomato sauce': ['Spaghetti (S)', 'Spaghetti (M)', 'Spaghetti (L)'],
+    'Sugar': ['All beverages', 'Various dishes'],
+    'Blue curaçao syrup': ['Blue Lemonade (Glass)', 'Blue Lemonade (Pitcher)'],
+    'Raspberry/red fruit tea powder': ['Red Tea (Glass)'],
+    'Espresso': ['Cafe Americano Tall', 'Cafe Americano Grande', 'Cafe Latte Tall', 'Cafe Latte Grande', 'Caramel Macchiato Tall', 'Caramel Macchiato Grande'],
+    'Vanilla syrup': ['Caramel Macchiato Tall', 'Caramel Macchiato Grande'],
+    'Caramel drizzle': ['Caramel Macchiato Tall', 'Caramel Macchiato Grande'],
+    'Black tea leaves/powder': ['Milk Tea Regular HC', 'Milk Tea Regular MC'],
+    'Matcha powder': ['Matcha Green Tea HC', 'Matcha Green Tea MC', 'Matcha Green Tea HC Frappe', 'Matcha Green Tea MC Frappe'],
+    'Tapioca pearls (sago)': ['Milk Tea Regular HC', 'Milk Tea Regular MC'],
+    'Sugar syrup': ['All Beverages'],
+    'Chocolate cookies (Oreo)': ['Cookies & Cream HC', 'Cookies & Cream MC'],
+    'Strawberry syrup': ['Strawberry & Cream HC'],
+    'Mango syrup/puree': ['Mango cheese cake HC'],
+    'Graham crumbs': ['Mango cheese cake HC'],
+    'Tortilla chips': ['Cheesy Nachos', 'Nachos Supreme'],
+    'Cheese sauce': ['Cheesy Nachos', 'Nachos Supreme'],
+    'Salsa': ['Nachos Supreme'],
+    'Tartar sauce': ['Fish and Fries'],
+    'Bread': ['Clubhouse Sandwich'],
+    'Nuts (pili or cashew)': ['Special Bulalo (good for 2-3 Persons)', 'Special Bulalo Buy 1 Take 1 (good for 6-8 Persons)'],
+    'Olive oil': ['Clubhouse Sandwich'],
+    'Jasmine rice': ['All Rice-based dishes', 'Fried Rice', 'Plain Rice', 'Tinapa Rice', 'Tuyo Pesto'],
+    'Tamarind (sampaloc)': ['Sinigang (PORK)', 'Sinigang (Shrimp)'],
+    'Bagoong (fermented shrimp paste)': ['Paknet (Pakbet w/ Bagnet)'],
+    'Fish sauce (patis)': ['Sinigang (PORK)', 'Sinigang (Shrimp)', 'Paknet (Pakbet w/ Bagnet)'],
+    'Bay leaves': ['Sinigang (PORK)', 'Sinigang (Shrimp)', 'Special Bulalo (good for 2-3 Persons)', 'Special Bulalo Buy 1 Take 1 (good for 6-8 Persons)'],
+    'Ice': ['All cold beverages', 'Frappe drinks'],
+    'Water': ['All dishes and beverages'],
+    'Sprite/7-Up': ['Soda (Mismo)', 'Soda 1.5L'],
+    'Branded soda (Coke, Sprite, Royal)': ['Soda (Mismo)', 'Soda 1.5L'],
+    'Paper cups': ['All beverage servings', 'Milk Tea', 'Coffee drinks', 'Frappe'],
+    'Straws': ['All beverage servings', 'Milk Tea', 'Coffee drinks', 'Frappe'],
+    'Food containers': ['All takeout orders', 'Budget meals packaging', 'Party trays'],
+    'Plastic utensils': ['All food orders', 'Takeout packaging'],
+    'Napkins': ['All orders', 'Customer service']
 };
 
-// Reverse mapping
 const reverseRecipeMapping = {};
 for (const [ingredient, dishes] of Object.entries(recipeMapping)) {
     for (const dish of dishes) {
@@ -588,9 +158,6 @@ for (const [ingredient, dishes] of Object.entries(recipeMapping)) {
     }
 }
 
-// ==================== CORE FUNCTIONS ====================
-
-// Check if a finished product can be made from available raw ingredients
 const checkProductAvailability = async (productName) => {
     try {
         const requiredIngredients = reverseRecipeMapping[productName];
@@ -625,10 +192,6 @@ const checkProductAvailability = async (productName) => {
                     currentStock: inventoryItem.currentStock,
                     minStock: inventoryItem.minStock
                 });
-                
-                if (inventoryItem.currentStock < (inventoryItem.minStock || 10)) {
-                    // Just log warning, don't block availability
-                }
             }
         }
         
@@ -648,20 +211,17 @@ const checkProductAvailability = async (productName) => {
     }
 };
 
-// When raw ingredient is restocked, update related menu items availability
 const updateRelatedMenuItems = async (rawIngredientName) => {
     try {
         const possibleDishes = recipeMapping[rawIngredientName];
         if (!possibleDishes || possibleDishes.length === 0) return;
         
         for (const dish of possibleDishes) {
-            // Update menu item availability
             const menuItem = await MenuItem.findOne({
                 itemName: { $regex: new RegExp(`^${dish}$`, 'i') }
             });
             
             if (menuItem) {
-                // Check if all ingredients are now available
                 const availability = await checkProductAvailability(dish);
                 
                 if (availability.available && menuItem.status === 'out_of_stock') {
@@ -670,7 +230,6 @@ const updateRelatedMenuItems = async (rawIngredientName) => {
                     menuItem.requiredIngredients = availability.requiredIngredients || [];
                     await menuItem.save();
                     
-                    // Also update Product if exists
                     const product = await Product.findOne({
                         itemName: { $regex: new RegExp(`^${dish}$`, 'i') }
                     });
@@ -687,7 +246,6 @@ const updateRelatedMenuItems = async (rawIngredientName) => {
     }
 };
 
-// When raw ingredient is used, check if it affects menu items
 const checkAffectedMenuItems = async (rawIngredientName) => {
     try {
         const possibleDishes = recipeMapping[rawIngredientName];
@@ -699,12 +257,10 @@ const checkAffectedMenuItems = async (rawIngredientName) => {
         });
         
         if (!inventoryItem || inventoryItem.currentStock <= 0) {
-            // This ingredient is now out of stock, check all dishes that use it
             for (const dish of possibleDishes) {
                 const availability = await checkProductAvailability(dish);
                 
                 if (!availability.available) {
-                    // Mark menu item as out of stock
                     await MenuItem.findOneAndUpdate(
                         { itemName: { $regex: new RegExp(`^${dish}$`, 'i') } },
                         { 
@@ -713,7 +269,6 @@ const checkAffectedMenuItems = async (rawIngredientName) => {
                         }
                     );
                     
-                    // Also update Product if exists
                     await Product.findOneAndUpdate(
                         { itemName: { $regex: new RegExp(`^${dish}$`, 'i') } },
                         { status: 'out_of_stock' }
@@ -726,7 +281,6 @@ const checkAffectedMenuItems = async (rawIngredientName) => {
     }
 };
 
-// Get recipe details for a specific dish
 const getRecipeDetails = async (dishName) => {
     try {
         const requiredIngredients = reverseRecipeMapping[dishName] || [];
@@ -765,12 +319,8 @@ const getRecipeDetails = async (dishName) => {
     }
 };
 
-// Initialize database with proper separation
 const initializeDatabase = async () => {
     try {
-        
-        
-        // Check and create admin user
         const adminExists = await User.findOne({ username: 'admin' });
         if (!adminExists) {
             const hashedPassword = bcrypt.hashSync('admin123', 10);
@@ -780,10 +330,8 @@ const initializeDatabase = async () => {
                 role: 'admin',
                 status: 'active'
             });
-           
         }
         
-        // Check and create default categories
         const categoryCount = await Category.countDocuments();
         if (categoryCount === 0) {
             const defaultCategories = [
@@ -799,10 +347,8 @@ const initializeDatabase = async () => {
                 { name: 'Specialties' }
             ];
             await Category.insertMany(defaultCategories);
-           
         }
         
-        // Clean up any existing invalid MenuItem documents
         await MenuItem.deleteMany({
             $or: [
                 { itemName: null },
@@ -813,221 +359,7 @@ const initializeDatabase = async () => {
                 { name: undefined }
             ]
         });
-        
-        // Create all raw ingredients from recipe mapping
-        const allIngredients = Object.keys(recipeMapping);
-        
-        // Define default categories for ingredients
-        const ingredientCategories = {
-            'Meat': ['Chicken', 'Pork slices', 'Pork belly', 'Ground pork', 'Bagnet', 'Pork ribs', 'Pork face & ears', 'Liver', 'Pork chop', 'Hotdogs', 'Bacon', 'Ham', 'Beef shanks and marrow'],
-            'Seafood': ['Cream dory fillet', 'Shrimp', 'Smoked fish (tinapa)', 'Dried fish (tuyo)'],
-            'Dairy': ['Butter', 'Eggs', 'Cheese', 'Grated cheese', 'Mayonnaise', 'Whipped cream', 'Cream cheese', 'Sour cream', 'Non-dairy creamer', 'Milk'],
-            'Produce': ['Garlic', 'Onion', 'Green onions', 'Carrots', 'Cabbage', 'Tomato', 'Eggplant', 'Cucumber', 'Lettuce', 'Celery', 'Green beans', 'Spring onions', 'Chili peppers', 'Long green chili (siling haba)', 'Jalapeños', 'Potato strips', 'Corn on the cob', 'Ginger', 'Calamansi', 'Lemon', 'Mint', 'Kangkong (water spinach)', 'Radish', 'Sitaw (long beans)', 'Okra', 'Bitter melon (ampalaya)', 'Squash', 'Pechay (bok choy)', 'Basil or malunggay leaves', 'Mixed vegetables (peas, carrots)'],
-            'Dry Goods': ['Soy sauce', 'Brown sugar', 'Gochujang (Korean chili paste)', 'Sesame oil', 'Sesame seeds', 'Salt', 'Black pepper', 'Whole peppercorns', 'Cornstarch', 'Cooking oil', 'Flour', 'Breadcrumbs', 'Honey', 'Chili flakes or hot sauce', 'Vinegar', 'Lumpia wrapper', 'Bihon/canton noodles', 'Spaghetti noodles', 'Oyster sauce', 'Banana ketchup', 'Tomato sauce', 'Sugar', 'Blue curaçao syrup', 'Raspberry/red fruit tea powder', 'Espresso', 'Vanilla syrup', 'Caramel drizzle', 'Black tea leaves/powder', 'Matcha powder', 'Tapioca pearls (sago)', 'Sugar syrup', 'Chocolate cookies (Oreo)', 'Strawberry syrup', 'Mango syrup/puree', 'Graham crumbs', 'Tortilla chips', 'Cheese sauce', 'Salsa', 'Tartar sauce', 'Bread', 'Nuts (pili or cashew)', 'Olive oil', 'Jasmine rice', 'Tamarind (sampaloc)', 'Bagoong (fermented shrimp paste)', 'Fish sauce (patis)', 'Bay leaves'],
-            'Beverages': ['Sprite/7-Up', 'Branded soda (Coke, Sprite, Royal)', 'Ice', 'Water'],
-            'Packaging': ['Paper cups', 'Straws', 'Food containers', 'Plastic utensils', 'Napkins']
-        };
-        
-        // Default prices for ingredients (for demo purposes)
-        const defaultPrices = {
-            'Chicken': 200, 'Pork slices': 180, 'Pork belly': 220, 'Ground pork': 190,
-            'Beef shanks and marrow': 250, 'Cream dory fillet': 180, 'Shrimp': 300,
-            'Butter': 150, 'Eggs': 10, 'Cheese': 200, 'Garlic': 80, 'Onion': 60,
-            'Cooking oil': 120, 'Jasmine rice': 50, 'Sugar': 40, 'Salt': 20
-        };
-        
-        for (const ingredient of allIngredients) {
-            // Determine category
-            let category = 'Dry Goods';
-            for (const [cat, items] of Object.entries(ingredientCategories)) {
-                if (items.includes(ingredient)) {
-                    category = cat;
-                    break;
-                }
-            }
-            
-            // Determine unit
-            let unit = 'kg';
-            if (ingredient.includes('sauce') || ingredient.includes('oil') || ingredient.includes('syrup')) {
-                unit = 'liter';
-            } else if (ingredient.includes('eggs') || ingredient.includes('cups') || ingredient.includes('straws') || ingredient.includes('napkins')) {
-                unit = 'pcs';
-            } else if (ingredient.includes('leaves') || ingredient.includes('herbs')) {
-                unit = 'bunch';
-            } else if (ingredient.includes('ice') || ingredient.includes('water')) {
-                unit = 'liter';
-            }
-            
-            const exists = await InventoryItem.findOne({ 
-                itemName: { $regex: new RegExp(`^${ingredient}$`, 'i') },
-                itemType: 'raw'
-            });
-            
-            if (!exists) {
-                await InventoryItem.create({
-                    itemName: ingredient,
-                    itemType: 'raw',
-                    category: category,
-                    unit: unit,
-                    minStock: 10,
-                    currentStock: 20,
-                    price: defaultPrices[ingredient] || 100,
-                    isActive: true,
-                    description: `Raw ingredient for various dishes`
-                });
-            
-            }
-        }
-        
-        // Seed menu items (finished products)
-        const seedMenu = [
-            // Rice Bowl Meals
-            { itemName: 'Korean Spicy Bulgogi (Pork)', price: 180, category: 'Rice Bowl Meals' },
-            { itemName: 'Korean Salt and Pepper (Pork)', price: 175, category: 'Rice Bowl Meals' },
-            { itemName: 'Crispy Pork Lechon Kawali', price: 165, category: 'Rice Bowl Meals' },
-            { itemName: 'Cream Dory Fish Fillet', price: 160, category: 'Rice Bowl Meals' },
-            { itemName: 'Buttered Honey Chicken', price: 155, category: 'Rice Bowl Meals' },
-            { itemName: 'Buttered Spicy Chicken', price: 155, category: 'Rice Bowl Meals' },
-            { itemName: 'Chicken Adobo', price: 145, category: 'Rice Bowl Meals' },
-            { itemName: 'Pork Shanghai', price: 140, category: 'Rice Bowl Meals' },
-            
-            // Hot Sizzlers
-            { itemName: 'Sizzling Pork Sisig', price: 220, category: 'Hot Sizzlers' },
-            { itemName: 'Sizzling Liempo', price: 210, category: 'Hot Sizzlers' },
-            { itemName: 'Sizzling Porkchop', price: 195, category: 'Hot Sizzlers' },
-            { itemName: 'Sizzling Fried Chicken', price: 185, category: 'Hot Sizzlers' },
-            
-            // Party Tray
-            { itemName: 'Pancit Bihon (S)', price: 350, category: 'Party Tray' },
-            { itemName: 'Pancit Bihon (M)', price: 550, category: 'Party Tray' },
-            { itemName: 'Pancit Bihon (L)', price: 750, category: 'Party Tray' },
-            { itemName: 'Pancit Canton (S)', price: 380, category: 'Party Tray' },
-            { itemName: 'Pancit Canton (M)', price: 580, category: 'Party Tray' },
-            { itemName: 'Pancit Canton (L)', price: 780, category: 'Party Tray' },
-            { itemName: 'Spaghetti (S)', price: 400, category: 'Party Tray' },
-            { itemName: 'Spaghetti (M)', price: 600, category: 'Party Tray' },
-            { itemName: 'Spaghetti (L)', price: 800, category: 'Party Tray' },
-            
-            // Drinks
-            { itemName: 'Cucumber Lemonade (Glass)', price: 60, category: 'Drinks' },
-            { itemName: 'Cucumber Lemonade (Pitcher)', price: 180, category: 'Drinks' },
-            { itemName: 'Blue Lemonade (Glass)', price: 65, category: 'Drinks' },
-            { itemName: 'Blue Lemonade (Pitcher)', price: 190, category: 'Drinks' },
-            { itemName: 'Red Tea (Glass)', price: 55, category: 'Drinks' },
-            { itemName: 'Soda (Mismo)', price: 25, category: 'Drinks' },
-            { itemName: 'Soda 1.5L', price: 65, category: 'Drinks' },
-            
-            // Coffee
-            { itemName: 'Cafe Americano Tall', price: 80, category: 'Coffee' },
-            { itemName: 'Cafe Americano Grande', price: 95, category: 'Coffee' },
-            { itemName: 'Cafe Latte Tall', price: 90, category: 'Coffee' },
-            { itemName: 'Cafe Latte Grande', price: 105, category: 'Coffee' },
-            { itemName: 'Caramel Macchiato Tall', price: 100, category: 'Coffee' },
-            { itemName: 'Caramel Macchiato Grande', price: 115, category: 'Coffee' },
-            
-            // Milk Tea
-            { itemName: 'Milk Tea Regular HC', price: 85, category: 'Milk Tea' },
-            { itemName: 'Milk Tea Regular MC', price: 95, category: 'Milk Tea' },
-            { itemName: 'Matcha Green Tea HC', price: 90, category: 'Milk Tea' },
-            { itemName: 'Matcha Green Tea MC', price: 100, category: 'Milk Tea' },
-            
-            // Frappe
-            { itemName: 'Matcha Green Tea HC Frappe', price: 120, category: 'Frappe' },
-            { itemName: 'Matcha Green Tea MC Frappe', price: 135, category: 'Frappe' },
-            { itemName: 'Cookies & Cream HC Frappe', price: 125, category: 'Frappe' },
-            { itemName: 'Cookies & Cream MC Frappe', price: 140, category: 'Frappe' },
-            { itemName: 'Strawberry & Cream HC Frappe', price: 130, category: 'Frappe' },
-            { itemName: 'Mango cheese cake HC Frappe', price: 135, category: 'Frappe' },
-            
-            // Snacks & Appetizer
-            { itemName: 'Cheesy Nachos', price: 150, category: 'Snacks & Appetizer' },
-            { itemName: 'Nachos Supreme', price: 180, category: 'Snacks & Appetizer' },
-            { itemName: 'French fries', price: 90, category: 'Snacks & Appetizer' },
-            { itemName: 'Clubhouse Sandwich', price: 120, category: 'Snacks & Appetizer' },
-            { itemName: 'Fish and Fries', price: 160, category: 'Snacks & Appetizer' },
-            { itemName: 'Cheesy Dynamite Lumpia', price: 25, category: 'Snacks & Appetizer' },
-            { itemName: 'Lumpiang Shanghai', price: 20, category: 'Snacks & Appetizer' },
-            
-            // Budget Meals Served with Rice
-            { itemName: 'Budget Meal: Fried Chicken', price: 95, category: 'Budget Meals Served with Rice' },
-            { itemName: 'Budget Meal: Buttered Honey Chicken', price: 105, category: 'Budget Meals Served with Rice' },
-            { itemName: 'Budget Meal: Buttered Spicy Chicken', price: 105, category: 'Budget Meals Served with Rice' },
-            { itemName: 'Tinapa Rice', price: 85, category: 'Budget Meals Served with Rice' },
-            { itemName: 'Tuyo Pesto', price: 80, category: 'Budget Meals Served with Rice' },
-            { itemName: 'Fried Rice', price: 50, category: 'Budget Meals Served with Rice' },
-            { itemName: 'Plain Rice', price: 25, category: 'Budget Meals Served with Rice' },
-            
-            // Specialties
-            { itemName: 'Sinigang (PORK)', price: 280, category: 'Specialties' },
-            { itemName: 'Sinigang (Shrimp)', price: 320, category: 'Specialties' },
-            { itemName: 'Paknet (Pakbet w/ Bagnet)', price: 260, category: 'Specialties' },
-            { itemName: 'Buttered Shrimp', price: 300, category: 'Specialties' },
-            { itemName: 'Special Bulalo (good for 2-3 Persons)', price: 450, category: 'Specialties' },
-            { itemName: 'Special Bulalo Buy 1 Take 1 (good for 6-8 Persons)', price: 850, category: 'Specialties' },
-            
-            // Additional items from recipe mapping that might be missing
-            { itemName: 'Pork Adobo', price: 150, category: 'Rice Bowl Meals' }
-        ];
 
-        let successfulCount = 0;
-        let failedCount = 0;
-
-        for (const item of seedMenu) {
-            try {
-                // Check if menu item exists
-                const existingMenuItem = await MenuItem.findOne({ 
-                    itemName: { $regex: new RegExp(`^${item.itemName}$`, 'i') }
-                });
-                
-                // Check if product exists
-                const existingProduct = await Product.findOne({ 
-                    itemName: { $regex: new RegExp(`^${item.itemName}$`, 'i') } 
-                });
-                
-                if (!existingMenuItem) {
-                    // Check availability based on raw ingredients
-                    const availability = await checkProductAvailability(item.itemName);
-                    
-                    const menuItemData = {
-                        itemName: item.itemName,
-                        name: item.itemName,
-                        price: item.price || 100,
-                        category: item.category || 'Uncategorized',
-                        description: item.description || '',
-                        status: availability.available ? 'available' : 'out_of_stock',
-                        isActive: true,
-                        stockType: 'unlimited',
-                        requiredIngredients: availability.requiredIngredients || []
-                    };
-                    
-                    await MenuItem.create(menuItemData);
-                    successfulCount++;
-                }
-                
-                if (!existingProduct) {
-                    const availability = await checkProductAvailability(item.itemName);
-                    
-                    const productData = {
-                        itemName: item.itemName,
-                        price: item.price || 100,
-                        category: item.category || 'Uncategorized',
-                        stock: 999,
-                        image: 'default_food.jpg',
-                        status: availability.available ? 'available' : 'out_of_stock',
-                        description: item.description || ''
-                    };
-                    
-                    await Product.create(productData);
-                }
-            } catch (err) {
-                failedCount++;
-                console.error(`   ❌ Error seeding ${item.itemName}:`, err.message);
-            }
-        }
-        
-       
-    
-        
     } catch (error) {
         console.error('Database initialization error:', error);
     }
@@ -1035,7 +367,6 @@ const initializeDatabase = async () => {
 
 await initializeDatabase();
 
-// WebSocket-like functionality for admin notifications
 const adminClients = new Set();
 
 app.use(express.json({ limit: '10mb' }));
@@ -1043,14 +374,12 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, "public")));
 app.use('/images', express.static(path.join(__dirname, "images")));
-// Serve default_food.png when code requests default_food.jpg
 app.get('/images/default_food.jpg', (req, res) => {
     res.sendFile(path.join(__dirname, 'images', 'default_food.png'));
 });
 app.set("view engine", "ejs");
 app.set('views', path.join(__dirname, 'views'));
 
-// Middleware
 const verifyToken = (req, res, next) => {
     try {
         const token = req.cookies.token;
@@ -1082,7 +411,6 @@ const verifyAdmin = (req, res, next) => {
     next();
 };
 
-// Real-time updates for admin dashboard
 app.get('/api/admin/events', verifyToken, verifyAdmin, (req, res) => {
     res.writeHead(200, {
         'Content-Type': 'text/event-stream',
@@ -1162,7 +490,6 @@ const sendLowStockAlert = async (inventoryItem) => {
     });
 };
 
-// Helper function to generate customer ID
 const generateCustomerId = () => {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
     let id = '';
@@ -1172,19 +499,131 @@ const generateCustomerId = () => {
     return id;
 };
 
-// Routes
+const getDashboardStats = async () => {
+    try {
+        const today = new Date();
+        const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0, 0);
+        const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999);
+        
+        const [
+            totalOrders,
+            todaysOrders,
+            totalCustomers,
+            totalMenuItems,
+            availableMenuItems,
+            totalInventoryItems,
+            inventoryLowStock,
+            inventoryOutOfStock,
+            topSellingProducts
+        ] = await Promise.all([
+            Order.countDocuments(),
+            Order.countDocuments({ 
+                createdAt: { $gte: startOfDay, $lte: endOfDay },
+                status: 'completed'
+            }),
+            Customer.countDocuments(),
+            MenuItem.countDocuments({ isActive: true }),
+            MenuItem.countDocuments({ 
+                status: 'available', 
+                isActive: true 
+            }),
+            InventoryItem.countDocuments({ itemType: 'raw' }),
+            InventoryItem.countDocuments({ 
+                itemType: 'raw', 
+                currentStock: { $gt: 0, $lt: LOW_STOCK_THRESHOLD }, 
+                isActive: true 
+            }),
+            InventoryItem.countDocuments({ 
+                itemType: 'raw', 
+                currentStock: 0, 
+                isActive: true 
+            }),
+            Order.aggregate([
+                { $unwind: '$items' },
+                { $group: { 
+                    _id: '$items.itemName',
+                    totalQuantity: { $sum: '$items.quantity' },
+                    totalRevenue: { $sum: { $multiply: ['$items.price', '$items.quantity'] } }
+                }},
+                { $sort: { totalQuantity: -1 } },
+                { $limit: 5 }
+            ])
+        ]);
+        
+        const totalRevenueResult = await Order.aggregate([
+            { $match: { status: 'completed' } },
+            { $group: { _id: null, total: { $sum: '$total' } } }
+        ]);
+        const totalRevenue = totalRevenueResult[0]?.total || 0;
+        
+        const todaysRevenueResult = await Order.aggregate([
+            { 
+                $match: { 
+                    status: 'completed',
+                    createdAt: { $gte: startOfDay, $lte: endOfDay }
+                } 
+            },
+            { $group: { _id: null, total: { $sum: '$total' } } }
+        ]);
+        const todaysRevenue = todaysRevenueResult[0]?.total || 0;
+        
+        return {
+            totalOrders,
+            todaysOrders,
+            totalCustomers,
+            totalMenuItems,
+            availableMenuItems,
+            outOfStockMenuItems: totalMenuItems - availableMenuItems,
+            totalInventoryItems,
+            inventoryLowStock,
+            inventoryOutOfStock,
+            totalRevenue,
+            todaysRevenue,
+            topSellingProducts
+        };
+    } catch (error) {
+        console.error('Error getting dashboard stats:', error);
+        return {
+            totalOrders: 0,
+            todaysOrders: 0,
+            totalCustomers: 0,
+            totalMenuItems: 0,
+            availableMenuItems: 0,
+            outOfStockMenuItems: 0,
+            totalInventoryItems: 0,
+            inventoryLowStock: 0,
+            inventoryOutOfStock: 0,
+            totalRevenue: 0,
+            todaysRevenue: 0,
+            topSellingProducts: []
+        };
+    }
+};
+
+const sendStatsUpdate = async () => {
+    try {
+        const stats = await getDashboardStats();
+        
+        broadcastToAdmins({
+            type: 'stats_update',
+            data: stats,
+            message: 'Dashboard stats updated'
+        });
+        
+        return stats;
+    } catch (error) {
+        console.error('Error sending stats update:', error);
+    }
+};
+
 app.use("/api/categories", categoryRoutes);
 app.use("/api/products", productRoutes);
 app.use("/api/stock-requests", verifyToken, stockRequestRoutes);
 
-// ==================== INVENTORY ROUTES (RAW INGREDIENTS ONLY) ====================
-
-// Get inventory items (raw ingredients only)
 app.get("/api/inventory", verifyToken, verifyAdmin, async (req, res) => {
     try {
         const items = await InventoryItem.find({ itemType: 'raw' }).sort({ createdAt: -1 });
         
-        // Add recipe info to each item
         const itemsWithRecipeInfo = items.map(item => {
             const itemObj = item.toObject();
             const possibleDishes = recipeMapping[item.itemName];
@@ -1235,7 +674,6 @@ app.get("/api/inventory/:id", verifyToken, verifyAdmin, async (req, res) => {
     }
 });
 
-// Create inventory item (raw ingredient only)
 app.post("/api/inventory", verifyToken, verifyAdmin, async (req, res) => {
     try {
         const { 
@@ -1263,15 +701,16 @@ app.post("/api/inventory", verifyToken, verifyAdmin, async (req, res) => {
             description: description || '',
             currentStock: currentStock || 0,
             minStock: minStock || 10,
-            unit: unit || 1,
+            unit: unit || 'pcs',
             isActive: isActive !== undefined ? isActive : true,
             price: price || 0
         });
 
         await newItem.save();
 
-        // Check related menu items availability
         await updateRelatedMenuItems(itemName);
+        
+        await sendStatsUpdate();
 
         res.status(201).json({ 
             success: true, 
@@ -1294,7 +733,6 @@ app.post("/api/inventory", verifyToken, verifyAdmin, async (req, res) => {
     }
 });
 
-// Update inventory item (raw ingredient only)
 app.put("/api/inventory/:id", verifyToken, verifyAdmin, async (req, res) => {
     try {
         const { 
@@ -1331,8 +769,9 @@ app.put("/api/inventory/:id", verifyToken, verifyAdmin, async (req, res) => {
             });
         }
 
-        // Check related menu items availability
         await updateRelatedMenuItems(itemName);
+        
+        await sendStatsUpdate();
 
         res.json({ 
             success: true, 
@@ -1355,7 +794,6 @@ app.put("/api/inventory/:id", verifyToken, verifyAdmin, async (req, res) => {
     }
 });
 
-// Delete inventory item (raw ingredient only)
 app.delete("/api/inventory/:id", verifyToken, verifyAdmin, async (req, res) => {
     try {
         const deletedItem = await InventoryItem.findOneAndDelete({ 
@@ -1369,6 +807,8 @@ app.delete("/api/inventory/:id", verifyToken, verifyAdmin, async (req, res) => {
                 message: 'Raw ingredient not found' 
             });
         }
+        
+        await sendStatsUpdate();
 
         res.json({ 
             success: true, 
@@ -1382,7 +822,6 @@ app.delete("/api/inventory/:id", verifyToken, verifyAdmin, async (req, res) => {
     }
 });
 
-// Restock inventory (raw ingredient only)
 app.post("/api/inventory/:id/restock", verifyToken, verifyAdmin, async (req, res) => {
     try {
         const { quantity, notes, price } = req.body;
@@ -1407,7 +846,6 @@ app.post("/api/inventory/:id/restock", verifyToken, verifyAdmin, async (req, res
             });
         }
         
-        const oldStock = item.currentStock;
         item.currentStock += parseFloat(quantity);
         
         item.restockHistory.push({
@@ -1419,13 +857,13 @@ app.post("/api/inventory/:id/restock", verifyToken, verifyAdmin, async (req, res
         
         await item.save();
         
-        // Check low stock alert
         if (item.currentStock > 0 && item.currentStock < (item.minStock || 10)) {
             sendLowStockAlert(item);
         }
         
-        // Update related menu items availability
         await updateRelatedMenuItems(item.itemName);
+        
+        await sendStatsUpdate();
         
         res.json({
             success: true,
@@ -1441,7 +879,6 @@ app.post("/api/inventory/:id/restock", verifyToken, verifyAdmin, async (req, res
     }
 });
 
-// Use inventory item (raw ingredient only)
 app.post("/api/inventory/:id/use", verifyToken, verifyAdmin, async (req, res) => {
     try {
         const { quantity, notes } = req.body;
@@ -1473,7 +910,6 @@ app.post("/api/inventory/:id/use", verifyToken, verifyAdmin, async (req, res) =>
             });
         }
         
-        const oldStock = item.currentStock;
         item.currentStock -= parseFloat(quantity);
         
         item.usageHistory.push({
@@ -1484,13 +920,13 @@ app.post("/api/inventory/:id/use", verifyToken, verifyAdmin, async (req, res) =>
         
         await item.save();
         
-        // Check if stock is now low
         if (item.currentStock > 0 && item.currentStock < (item.minStock || 10)) {
             sendLowStockAlert(item);
         }
         
-        // Check affected menu items
         await checkAffectedMenuItems(item.itemName);
+        
+        await sendStatsUpdate();
         
         res.json({
             success: true,
@@ -1506,7 +942,6 @@ app.post("/api/inventory/:id/use", verifyToken, verifyAdmin, async (req, res) =>
     }
 });
 
-// Filter and search inventory (raw ingredients only)
 app.get("/api/inventory/filter/search", verifyToken, verifyAdmin, async (req, res) => {
     try {
         const { category, search } = req.query;
@@ -1530,7 +965,6 @@ app.get("/api/inventory/filter/search", verifyToken, verifyAdmin, async (req, re
     }
 });
 
-// Get inventory categories (for raw ingredients)
 app.get("/api/inventory/categories", verifyToken, verifyAdmin, async (req, res) => {
     try {
         const categories = await InventoryItem.distinct("category", { itemType: 'raw' });
@@ -1543,38 +977,16 @@ app.get("/api/inventory/categories", verifyToken, verifyAdmin, async (req, res) 
     }
 });
 
-// Get inventory stats (raw ingredients only)
 app.get("/api/inventory/stats", verifyToken, verifyAdmin, async (req, res) => {
     try {
-        const totalItems = await InventoryItem.countDocuments({ itemType: 'raw' });
-        
-        const allItems = await InventoryItem.find({ itemType: 'raw' }).lean();
-        
-        let lowStockCount = 0;
-        let outOfStockCount = 0;
-        let totalValue = 0;
-        
-        for (const item of allItems) {
-            const minStockValue = item.minStock || 10;
-            const currentStockValue = item.currentStock || 0;
-            const price = item.price || 0;
-            
-            totalValue += currentStockValue * price;
-            
-            if (currentStockValue === 0) {
-                outOfStockCount++;
-            } else if (currentStockValue > 0 && currentStockValue <= minStockValue) {
-                lowStockCount++;
-            }
-        }
-        
+        const stats = await getDashboardStats();
         res.json({
             success: true,
             data: {
-                totalItems,
-                lowStock: lowStockCount,
-                outOfStock: outOfStockCount,
-                totalValue
+                totalInventoryItems: stats.totalInventoryItems,
+                lowStock: stats.inventoryLowStock,
+                outOfStock: stats.inventoryOutOfStock,
+                totalValue: 0
             }
         });
     } catch (error) {
@@ -1582,7 +994,7 @@ app.get("/api/inventory/stats", verifyToken, verifyAdmin, async (req, res) => {
         res.json({
             success: true,
             data: {
-                totalItems: 0,
+                totalInventoryItems: 0,
                 lowStock: 0,
                 outOfStock: 0,
                 totalValue: 0
@@ -1591,7 +1003,6 @@ app.get("/api/inventory/stats", verifyToken, verifyAdmin, async (req, res) => {
     }
 });
 
-// Get items needing restock (raw ingredients only)
 app.get("/api/inventory/needs-restock", verifyToken, verifyAdmin, async (req, res) => {
     try {
         const items = await InventoryItem.find({
@@ -1620,7 +1031,6 @@ app.get("/api/inventory/needs-restock", verifyToken, verifyAdmin, async (req, re
     }
 });
 
-// Get recipe details for an inventory item
 app.get("/api/inventory/:id/recipe-details", verifyToken, verifyAdmin, async (req, res) => {
     try {
         const item = await InventoryItem.findOne({ 
@@ -1659,9 +1069,6 @@ app.get("/api/inventory/:id/recipe-details", verifyToken, verifyAdmin, async (re
     }
 });
 
-// ==================== MENU MANAGEMENT ROUTES (FINISHED PRODUCTS ONLY) ====================
-
-// Get all menu items (finished products)
 app.get("/api/menu", verifyToken, async (req, res) => {
     try {
         const { category, search, status } = req.query;
@@ -1691,7 +1098,6 @@ app.get("/api/menu", verifyToken, async (req, res) => {
 
         const items = await MenuItem.find(query).sort({ itemName: 1 });
         
-        // Add availability info
         const itemsWithAvailability = await Promise.all(items.map(async (item) => {
             const itemObj = item.toObject();
             const availability = await checkProductAvailability(item.itemName);
@@ -1715,7 +1121,6 @@ app.get("/api/menu", verifyToken, async (req, res) => {
     }
 });
 
-// Get single menu item
 app.get("/api/menu/:id", verifyToken, async (req, res) => {
     try {
         const item = await MenuItem.findById(req.params.id);
@@ -1746,11 +1151,8 @@ app.get("/api/menu/:id", verifyToken, async (req, res) => {
     }
 });
 
-// Create menu item (finished product)
 app.post("/api/menu", verifyToken, verifyAdmin, async (req, res) => {
     try {
-        console.log('📥 Received menu item creation request:', req.body);
-        
         const { 
             name,
             itemName,
@@ -1764,8 +1166,6 @@ app.post("/api/menu", verifyToken, verifyAdmin, async (req, res) => {
 
         const finalItemName = name || itemName;
         
-        console.log('🔍 Validating fields:', { finalItemName, price, category });
-        
         if (!finalItemName || !price || !category) {
             return res.status(400).json({ 
                 success: false, 
@@ -1773,7 +1173,6 @@ app.post("/api/menu", verifyToken, verifyAdmin, async (req, res) => {
             });
         }
 
-        // Check availability based on raw ingredients
         const availability = await checkProductAvailability(finalItemName);
 
         const menuItemData = {
@@ -1788,14 +1187,9 @@ app.post("/api/menu", verifyToken, verifyAdmin, async (req, res) => {
             requiredIngredients: requiredIngredients || availability.requiredIngredients || []
         };
 
-        
-
         const newItem = new MenuItem(menuItemData);
         await newItem.save();
 
-        
-
-        // Also create Product record for POS system
         const existingProduct = await Product.findOne({
             itemName: { $regex: new RegExp(`^${finalItemName}$`, 'i') }
         });
@@ -1814,6 +1208,8 @@ app.post("/api/menu", verifyToken, verifyAdmin, async (req, res) => {
 
             await product.save();
         }
+        
+        await sendStatsUpdate();
 
         res.status(201).json({ 
             success: true, 
@@ -1821,7 +1217,7 @@ app.post("/api/menu", verifyToken, verifyAdmin, async (req, res) => {
             data: newItem
         });
     } catch (error) {
-        console.error('❌ Error creating menu item:', error);
+        console.error('Error creating menu item:', error);
         if (error.name === 'ValidationError') {
             return res.status(400).json({ 
                 success: false, 
@@ -1836,7 +1232,6 @@ app.post("/api/menu", verifyToken, verifyAdmin, async (req, res) => {
     }
 });
 
-// Update menu item (finished product)
 app.put("/api/menu/:id", verifyToken, verifyAdmin, async (req, res) => {
     try {
         const { 
@@ -1875,7 +1270,6 @@ app.put("/api/menu/:id", verifyToken, verifyAdmin, async (req, res) => {
             });
         }
 
-        // Update corresponding Product
         await Product.findOneAndUpdate(
             { menuItemId: updatedItem._id },
             {
@@ -1887,6 +1281,8 @@ app.put("/api/menu/:id", verifyToken, verifyAdmin, async (req, res) => {
                 updatedAt: new Date()
             }
         );
+        
+        await sendStatsUpdate();
 
         res.json({ 
             success: true, 
@@ -1909,7 +1305,6 @@ app.put("/api/menu/:id", verifyToken, verifyAdmin, async (req, res) => {
     }
 });
 
-// Delete menu item (finished product)
 app.delete("/api/menu/:id", verifyToken, verifyAdmin, async (req, res) => {
     try {
         const deletedItem = await MenuItem.findByIdAndDelete(req.params.id);
@@ -1921,8 +1316,9 @@ app.delete("/api/menu/:id", verifyToken, verifyAdmin, async (req, res) => {
             });
         }
 
-        // Also delete corresponding Product
         await Product.findOneAndDelete({ menuItemId: deletedItem._id });
+        
+        await sendStatsUpdate();
 
         res.json({ 
             success: true, 
@@ -1936,7 +1332,6 @@ app.delete("/api/menu/:id", verifyToken, verifyAdmin, async (req, res) => {
     }
 });
 
-// Check menu item availability
 app.get("/api/menu/:id/availability", verifyToken, async (req, res) => {
     try {
         const menuItem = await MenuItem.findById(req.params.id);
@@ -1951,17 +1346,17 @@ app.get("/api/menu/:id/availability", verifyToken, async (req, res) => {
         const availability = await checkProductAvailability(menuItem.itemName);
         const recipeDetails = await getRecipeDetails(menuItem.itemName);
         
-        // Update menu item status if changed
         if (menuItem.status !== (availability.available ? 'available' : 'out_of_stock')) {
             menuItem.status = availability.available ? 'available' : 'out_of_stock';
             menuItem.requiredIngredients = availability.requiredIngredients || [];
             await menuItem.save();
             
-            // Update Product status
             await Product.findOneAndUpdate(
                 { menuItemId: menuItem._id },
                 { status: menuItem.status }
             );
+            
+            await sendStatsUpdate();
         }
 
         res.json({
@@ -1984,7 +1379,6 @@ app.get("/api/menu/:id/availability", verifyToken, async (req, res) => {
     }
 });
 
-// Get recipe details for a menu item
 app.get("/api/menu/:id/recipe", verifyToken, async (req, res) => {
     try {
         const menuItem = await MenuItem.findById(req.params.id);
@@ -2011,7 +1405,6 @@ app.get("/api/menu/:id/recipe", verifyToken, async (req, res) => {
     }
 });
 
-// Bulk check menu items availability
 app.post("/api/menu/check-availability", verifyToken, async (req, res) => {
     try {
         const { menuItemIds } = req.body;
@@ -2062,7 +1455,6 @@ app.post("/api/menu/check-availability", verifyToken, async (req, res) => {
     }
 });
 
-// Get menu categories
 app.get("/api/menu/categories", verifyToken, async (req, res) => {
     try {
         const categories = await MenuItem.distinct("category", { isActive: true });
@@ -2075,33 +1467,17 @@ app.get("/api/menu/categories", verifyToken, async (req, res) => {
     }
 });
 
-// Get menu stats
 app.get("/api/menu/stats", verifyToken, verifyAdmin, async (req, res) => {
     try {
-        const totalItems = await MenuItem.countDocuments({ isActive: true });
-        const availableItems = await MenuItem.countDocuments({ 
-            status: 'available', 
-            isActive: true 
-        });
-        const outOfStockItems = await MenuItem.countDocuments({ 
-            status: 'out_of_stock', 
-            isActive: true 
-        });
-        
-        // Get categories count
-        const categories = await MenuItem.aggregate([
-            { $match: { isActive: true } },
-            { $group: { _id: "$category", count: { $sum: 1 } } },
-            { $sort: { count: -1 } }
-        ]);
-        
+        const stats = await getDashboardStats();
         res.json({
             success: true,
             data: {
-                totalItems,
-                availableItems,
-                outOfStockItems,
-                categories
+                totalItems: stats.totalMenuItems,
+                availableItems: stats.availableMenuItems,
+                outOfStockItems: stats.outOfStockMenuItems,
+                categories: [],
+                topSellingProducts: stats.topSellingProducts
             }
         });
     } catch (error) {
@@ -2112,15 +1488,13 @@ app.get("/api/menu/stats", verifyToken, verifyAdmin, async (req, res) => {
                 totalItems: 0,
                 availableItems: 0,
                 outOfStockItems: 0,
-                categories: []
+                categories: [],
+                topSellingProducts: []
             }
         });
     }
 });
 
-// ==================== PRODUCT AVAILABILITY ENDPOINTS ====================
-
-// Check product availability based on raw ingredients
 app.get("/api/products/:itemName/availability", verifyToken, async (req, res) => {
     try {
         const productName = decodeURIComponent(req.params.itemName);
@@ -2143,10 +1517,8 @@ app.get("/api/products/:itemName/availability", verifyToken, async (req, res) =>
     }
 });
 
-// Get all recipe mappings
 app.get("/api/recipes/mappings", verifyToken, verifyAdmin, async (req, res) => {
     try {
-        // Return a summary instead of the entire mapping
         const ingredientCount = Object.keys(recipeMapping).length;
         const dishCount = Object.keys(reverseRecipeMapping).length;
         
@@ -2168,7 +1540,6 @@ app.get("/api/recipes/mappings", verifyToken, verifyAdmin, async (req, res) => {
     }
 });
 
-// Get recipe for specific dish
 app.get("/api/recipes/dish/:dishName", verifyToken, async (req, res) => {
     try {
         const dishName = decodeURIComponent(req.params.dishName);
@@ -2187,7 +1558,6 @@ app.get("/api/recipes/dish/:dishName", verifyToken, async (req, res) => {
     }
 });
 
-// Get dishes that use specific ingredient
 app.get("/api/recipes/ingredient/:ingredientName", verifyToken, async (req, res) => {
     try {
         const ingredientName = decodeURIComponent(req.params.ingredientName);
@@ -2216,7 +1586,6 @@ app.get("/api/recipes/ingredient/:ingredientName", verifyToken, async (req, res)
     }
 });
 
-// Create recipe mapping
 app.post("/api/recipes/mapping", verifyToken, verifyAdmin, async (req, res) => {
     try {
         const { rawIngredient, finishedProduct } = req.body;
@@ -2228,7 +1597,6 @@ app.post("/api/recipes/mapping", verifyToken, verifyAdmin, async (req, res) => {
             });
         }
         
-        // Add to recipe mapping
         if (!recipeMapping[rawIngredient]) {
             recipeMapping[rawIngredient] = [];
         }
@@ -2237,7 +1605,6 @@ app.post("/api/recipes/mapping", verifyToken, verifyAdmin, async (req, res) => {
             recipeMapping[rawIngredient].push(finishedProduct);
         }
         
-        // Update reverse mapping
         if (!reverseRecipeMapping[finishedProduct]) {
             reverseRecipeMapping[finishedProduct] = [];
         }
@@ -2246,31 +1613,29 @@ app.post("/api/recipes/mapping", verifyToken, verifyAdmin, async (req, res) => {
             reverseRecipeMapping[finishedProduct].push(rawIngredient);
         }
         
-        // Update affected menu item
         const menuItem = await MenuItem.findOne({
             itemName: { $regex: new RegExp(`^${finishedProduct}$`, 'i') }
         });
         
         if (menuItem) {
-            // Update required ingredients
             if (!menuItem.requiredIngredients.includes(rawIngredient)) {
                 menuItem.requiredIngredients.push(rawIngredient);
                 await menuItem.save();
             }
             
-            // Check availability
             const availability = await checkProductAvailability(finishedProduct);
             if (menuItem.status !== (availability.available ? 'available' : 'out_of_stock')) {
                 menuItem.status = availability.available ? 'available' : 'out_of_stock';
                 await menuItem.save();
                 
-                // Update Product
                 await Product.findOneAndUpdate(
                     { menuItemId: menuItem._id },
                     { status: menuItem.status }
                 );
             }
         }
+        
+        await sendStatsUpdate();
         
         res.json({
             success: true,
@@ -2289,95 +1654,34 @@ app.post("/api/recipes/mapping", verifyToken, verifyAdmin, async (req, res) => {
     }
 });
 
-// ==================== DASHBOARD AND OTHER ROUTES ====================
-
-// Dashboard stats
 app.get("/api/dashboard/stats", verifyToken, verifyAdmin, async (req, res) => {
     try {
-        const totalOrders = await Order.countDocuments();
-        
-        // Get today's orders
-        const today = new Date();
-        const startOfDay = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate(), 0, 0, 0));
-        const endOfDay = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate(), 23, 59, 59));
-        
-        const todaysOrders = await Order.countDocuments({
-            createdAt: {
-                $gte: startOfDay,
-                $lte: endOfDay
-            }
-        });
-        
-        const totalMenuItems = await MenuItem.countDocuments({ isActive: true });
-        const availableMenuItems = await MenuItem.countDocuments({ 
-            status: 'available', 
-            isActive: true 
-        });
-        
-        const totalCustomers = await Customer.countDocuments();
-        const totalProducts = await InventoryItem.countDocuments({ itemType: 'raw' }); // FIXED: Changed from totalProducts.countDocuments to InventoryItem.countDocuments
-        
-        const totalRevenueResult = await Order.aggregate([
-            { $group: { _id: null, total: { $sum: "$total" } } }
-        ]);
-        const totalRevenue = totalRevenueResult[0]?.total || 0;
-        
-        // Today's revenue
-        const todaysRevenueResult = await Order.aggregate([
-            {
-                $match: {
-                    createdAt: {
-                        $gte: startOfDay,
-                        $lte: endOfDay
-                    }
-                }
-            },
-            { $group: { _id: null, total: { $sum: "$total" } } }
-        ]);
-        const todaysRevenue = todaysRevenueResult[0]?.total || 0;
-
-        const inventoryLowStock = await InventoryItem.countDocuments({
-            itemType: 'raw',
-            $expr: {
-                $and: [
-                    { $gt: ["$currentStock", 0] },
-                    { $lte: ["$currentStock", { $ifNull: ["$minStock", 10] }] }
-                ]
-            },
-            isActive: true
-        });
-        
-        const inventoryOutOfStock = await InventoryItem.countDocuments({
-            itemType: 'raw',
-            currentStock: 0,
-            isActive: true
-        });
-
+        const stats = await getDashboardStats();
         res.json({
             success: true,
-            data: {
-                totalOrders,
-                todaysOrders,
-                totalMenuItems,
-                availableMenuItems,
-                totalCustomers,
-                totalRevenue,
-                todaysRevenue,
-                totalProducts, // This is now properly defined
-                inventoryLowStock,
-                inventoryOutOfStock
-            }
+            data: stats
         });
     } catch (error) {
         console.error('Error fetching dashboard stats:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Failed to fetch dashboard statistics'
+        res.json({
+            success: true,
+            data: {
+                totalOrders: 0,
+                todaysOrders: 0,
+                totalCustomers: 0,
+                totalMenuItems: 0,
+                availableMenuItems: 0,
+                outOfStockMenuItems: 0,
+                totalInventoryItems: 0,
+                inventoryLowStock: 0,
+                inventoryOutOfStock: 0,
+                totalRevenue: 0,
+                todaysRevenue: 0,
+                topSellingProducts: []
+            }
         });
     }
 });
-
-// ==================== ORDER PROCESSING ====================
 
 app.post('/api/orders', async (req, res) => {
     try {
@@ -2431,16 +1735,13 @@ app.post('/api/orders', async (req, res) => {
         });
         const orderNumber = `ORD-${dateStr}-${(orderCount + 1).toString().padStart(3, '0')}`;
         
-        // Customer handling
         let customerId = orderData.customerId;
         let customer = null;
         
         if (customerId) {
-            // Try to find existing customer
             customer = await Customer.findOne({ customerId: customerId });
         }
         
-        // If no customer found or no customerId provided, create a new one
         if (!customer) {
             customerId = generateCustomerId();
             
@@ -2451,18 +1752,15 @@ app.post('/api/orders', async (req, res) => {
                 lastOrderDate: new Date()
             });
             
-            // Save customer
-            const savedCustomer = await customer.save();
+            await customer.save();
         } else {
-            // Update existing customer stats
             customer.totalOrders += 1;
             customer.totalSpent += orderData.total;
             customer.lastOrderDate = new Date();
             
-            const updatedCustomer = await customer.save();
+            await customer.save();
         }
         
-        // VALIDATE that customerId is definitely set before creating order
         if (!customerId || customerId.length === 0) {
             console.error('🚨 CRITICAL ERROR: customerId is empty after customer creation!');
             throw new Error('Customer ID is missing - cannot create order');
@@ -2498,62 +1796,42 @@ app.post('/api/orders', async (req, res) => {
         
         sendOrderNotification(savedOrder);
         
-        // Broadcast stats update to refresh dashboard
-        broadcastToAdmins({
-            type: 'stats_update',
-            data: {
-                totalOrders: await Order.countDocuments(),
-                totalCustomers: await Customer.countDocuments(),
-                lastOrderTime: new Date().toLocaleTimeString()
-            },
-            message: 'Dashboard stats updated'
-        });
+        await sendStatsUpdate();
         
-        // ==================== USE RAW INGREDIENTS WHEN ORDER IS PLACED ====================
-        try {
-            for (const item of orderData.items) {
-                // Find the menu item to get required ingredients
-                const menuItem = await MenuItem.findOne({
-                    itemName: { $regex: new RegExp(`^${item.itemName}$`, 'i') }
-                });
-                
-                if (menuItem && menuItem.requiredIngredients && menuItem.requiredIngredients.length > 0) {
-                    // Use raw ingredients based on recipe
-                    for (const ingredient of menuItem.requiredIngredients) {
-                        const inventoryItem = await InventoryItem.findOne({
-                            itemName: { $regex: new RegExp(`^${ingredient}$`, 'i') },
-                            itemType: 'raw'
-                        });
+        for (const item of orderData.items) {
+            const menuItem = await MenuItem.findOne({
+                itemName: { $regex: new RegExp(`^${item.itemName}$`, 'i') }
+            });
+            
+            if (menuItem && menuItem.requiredIngredients && menuItem.requiredIngredients.length > 0) {
+                for (const ingredient of menuItem.requiredIngredients) {
+                    const inventoryItem = await InventoryItem.findOne({
+                        itemName: { $regex: new RegExp(`^${ingredient}$`, 'i') },
+                        itemType: 'raw'
+                    });
+                    
+                    if (inventoryItem) {
+                        const usageQuantity = item.quantity || 1;
                         
-                        if (inventoryItem) {
-                            // Calculate usage based on quantity ordered
-                            // For simplicity, we'll assume 1 unit of raw ingredient per dish
-                            const usageQuantity = item.quantity || 1;
+                        if (inventoryItem.currentStock >= usageQuantity) {
+                            inventoryItem.currentStock -= usageQuantity;
+                            inventoryItem.usageHistory.push({
+                                quantity: usageQuantity,
+                                notes: `Used for ${item.quantity}x ${item.itemName} (Order: ${savedOrder.orderNumber})`,
+                                usedBy: 'system'
+                            });
                             
-                            if (inventoryItem.currentStock >= usageQuantity) {
-                                inventoryItem.currentStock -= usageQuantity;
-                                inventoryItem.usageHistory.push({
-                                    quantity: usageQuantity,
-                                    notes: `Used for ${item.quantity}x ${item.itemName} (Order: ${savedOrder.orderNumber})`,
-                                    usedBy: 'system'
-                                });
-                                
-                                await inventoryItem.save();
-                                
-                                // Check if stock is now low
-                                if (inventoryItem.currentStock > 0 && inventoryItem.currentStock < (inventoryItem.minStock || 10)) {
-                                    sendLowStockAlert(inventoryItem);
-                                }
-                                
-                                // Check affected menu items
-                                await checkAffectedMenuItems(ingredient);
+                            await inventoryItem.save();
+                            
+                            if (inventoryItem.currentStock > 0 && inventoryItem.currentStock < (inventoryItem.minStock || 10)) {
+                                sendLowStockAlert(inventoryItem);
                             }
+                            
+                            await checkAffectedMenuItems(ingredient);
                         }
                     }
                 }
             }
-        } catch (stockError) {
-            console.error('❌ Raw ingredient usage error:', stockError);
         }
         
         res.json({ 
@@ -2574,8 +1852,6 @@ app.post('/api/orders', async (req, res) => {
     }
 });
 
-// ==================== CUSTOMER ROUTES ====================
-
 app.get('/api/customers', verifyToken, verifyAdmin, async (req, res) => {
     try {
         const { page = 1, limit = 20, search = '' } = req.query;
@@ -2593,13 +1869,6 @@ app.get('/api/customers', verifyToken, verifyAdmin, async (req, res) => {
             .lean();
         
         const total = await Customer.countDocuments(query);
-        
-        // Get order count and total spent for each customer
-        for (const customer of customers) {
-            const customerOrders = await Order.find({ customerId: customer.customerId });
-            customer.orderCount = customerOrders.length;
-            customer.totalSpent = customerOrders.reduce((sum, order) => sum + (order.total || 0), 0);
-        }
         
         res.json({
             success: true,
@@ -2620,47 +1889,13 @@ app.get('/api/customers', verifyToken, verifyAdmin, async (req, res) => {
     }
 });
 
-// ==================== DASHBOARD ROUTES ====================
-
 app.get("/admindashboard", verifyToken, verifyAdmin, async (req, res) => {
     try {
-        const totalOrders = await Order.countDocuments();
-        const totalMenuItems = await MenuItem.countDocuments({ isActive: true });
-        const availableMenuItems = await MenuItem.countDocuments({ 
-            status: 'available', 
-            isActive: true 
-        });
-        const totalCustomers = await Customer.countDocuments();
+        const stats = await getDashboardStats();
         
-        const totalProducts = await InventoryItem.countDocuments({ itemType: 'raw' }); // FIXED
-        const inventoryLowStock = await InventoryItem.countDocuments({
-            itemType: 'raw',
-            $expr: {
-                $and: [
-                    { $gt: ["$currentStock", 0] },
-                    { $lte: ["$currentStock", { $ifNull: ["$minStock", 10] }] }
-                ]
-            },
-            isActive: true
-        });
-        
-        const inventoryOutOfStock = await InventoryItem.countDocuments({
-            itemType: 'raw',
-            currentStock: 0,
-            isActive: true
-        });
-
         res.render("admindashboard", { 
             user: req.user, 
-            stats: { 
-                totalOrders, 
-                totalMenuItems,
-                availableMenuItems,
-                totalCustomers,
-                totalProducts, // This is now properly defined
-                inventoryLowStock,
-                inventoryOutOfStock
-            } 
+            stats: stats
         });
     } catch (err) {
         console.error('Error in /admindashboard route:', err);
@@ -2668,12 +1903,17 @@ app.get("/admindashboard", verifyToken, verifyAdmin, async (req, res) => {
             user: req.user, 
             stats: { 
                 totalOrders: 0, 
+                todaysOrders: 0,
+                totalCustomers: 0,
                 totalMenuItems: 0,
                 availableMenuItems: 0,
-                totalCustomers: 0,
-                totalProducts: 0,
+                outOfStockMenuItems: 0,
+                totalInventoryItems: 0,
                 inventoryLowStock: 0,
-                inventoryOutOfStock: 0
+                inventoryOutOfStock: 0,
+                totalRevenue: 0,
+                todaysRevenue: 0,
+                topSellingProducts: []
             } 
         });
     }
@@ -2681,50 +1921,11 @@ app.get("/admindashboard", verifyToken, verifyAdmin, async (req, res) => {
 
 app.get("/admindashboard/dashboard", verifyToken, verifyAdmin, async (req, res) => {
     try {
-        // Get stats for dashboard
-        const totalOrders = await Order.countDocuments();
-        const totalMenuItems = await MenuItem.countDocuments({ isActive: true });
-        const availableMenuItems = await MenuItem.countDocuments({ 
-            status: 'available', 
-            isActive: true 
-        });
-        const totalCustomers = await Customer.countDocuments();
-        const totalRevenueResult = await Order.aggregate([
-            { $group: { _id: null, total: { $sum: "$total" } } }
-        ]);
-        const totalRevenue = totalRevenueResult[0]?.total || 0;
+        const stats = await getDashboardStats();
         
-        const totalProducts = await InventoryItem.countDocuments({ itemType: 'raw' }); // FIXED
-
-        const inventoryLowStock = await InventoryItem.countDocuments({
-            itemType: 'raw',
-            $expr: {
-                $and: [
-                    { $gt: ["$currentStock", 0] },
-                    { $lte: ["$currentStock", { $ifNull: ["$minStock", 10] }] }
-                ]
-            },
-            isActive: true
-        });
-        
-        const inventoryOutOfStock = await InventoryItem.countDocuments({
-            itemType: 'raw',
-            currentStock: 0,
-            isActive: true
-        });
-
         res.render("dashboard", { 
             user: req.user,
-            stats: {
-                totalOrders,
-                totalMenuItems,
-                availableMenuItems,
-                totalCustomers,
-                totalProducts, 
-                totalRevenue,
-                inventoryLowStock,
-                inventoryOutOfStock
-            }
+            stats: stats
         });
     } catch (error) {
         console.error('Error loading dashboard:', error);
@@ -2732,76 +1933,35 @@ app.get("/admindashboard/dashboard", verifyToken, verifyAdmin, async (req, res) 
             user: req.user,
             stats: {
                 totalOrders: 0,
+                todaysOrders: 0,
+                totalCustomers: 0,
                 totalMenuItems: 0,
                 availableMenuItems: 0,
-                totalCustomers: 0,
-                totalProducts: 0,
-                totalRevenue: 0,
+                outOfStockMenuItems: 0,
+                totalInventoryItems: 0,
                 inventoryLowStock: 0,
-                inventoryOutOfStock: 0
+                inventoryOutOfStock: 0,
+                totalRevenue: 0,
+                todaysRevenue: 0,
+                topSellingProducts: []
             }
         });
     }
 });
 
-// Updated Inventory Page Route
 app.get("/admindashboard/Inventory", verifyToken, verifyAdmin, async (req, res) => {
     try {
-        // Get inventory stats
-        const totalItems = await InventoryItem.countDocuments({ itemType: 'raw' });
+        const [totalItems, lowStockCount, outOfStockCount] = await Promise.all([
+            InventoryItem.countDocuments({ itemType: 'raw' }),
+            InventoryItem.countDocuments({ itemType: 'raw', currentStock: { $gt: 0, $lt: LOW_STOCK_THRESHOLD }, isActive: true }),
+            InventoryItem.countDocuments({ itemType: 'raw', currentStock: 0, isActive: true })
+        ]);
         
-        // Get category counts
-        const categoryCounts = {
-            meat: await InventoryItem.countDocuments({ 
-                itemType: 'raw', 
-                category: 'Meat' 
-            }),
-            seafood: await InventoryItem.countDocuments({ 
-                itemType: 'raw', 
-                category: 'Seafood' 
-            }),
-            dairy: await InventoryItem.countDocuments({ 
-                itemType: 'raw', 
-                category: 'Dairy' 
-            }),
-            produce: await InventoryItem.countDocuments({ 
-                itemType: 'raw', 
-                category: 'Produce' 
-            }),
-            dry: await InventoryItem.countDocuments({ 
-                itemType: 'raw', 
-                category: 'Dry Goods' 
-            }),
-            beverage: await InventoryItem.countDocuments({ 
-                itemType: 'raw', 
-                category: 'Beverages' 
-            }),
-            packaging: await InventoryItem.countDocuments({ 
-                itemType: 'raw', 
-                category: 'Packaging' 
-            })
-        };
-        
-        // Get low stock and out of stock counts
-        const lowStockCount = await InventoryItem.countDocuments({
-            itemType: 'raw',
-            currentStock: { $gt: 0, $lt: LOW_STOCK_THRESHOLD },
-            isActive: true
-        });
-        
-        const outOfStockCount = await InventoryItem.countDocuments({
-            itemType: 'raw',
-            currentStock: 0,
-            isActive: true
-        });
-        
-        // Get initial inventory items for display
         const initialItems = await InventoryItem.find({ itemType: 'raw' })
             .sort({ createdAt: -1 })
             .limit(20)
             .lean();
         
-        // Get all categories for the dropdown
         const allCategories = [
             'Meat & Poultry', 'Seafood', 'Dairy & Eggs', 'Vegetables & Fruits',
             'Dry Goods', 'Beverages', 'Packaging'
@@ -2812,8 +1972,7 @@ app.get("/admindashboard/Inventory", verifyToken, verifyAdmin, async (req, res) 
             stats: {
                 totalItems,
                 lowStockCount,
-                outOfStockCount,
-                categoryCounts
+                outOfStockCount
             },
             initialItems: initialItems || [],
             allCategories,
@@ -2827,16 +1986,7 @@ app.get("/admindashboard/Inventory", verifyToken, verifyAdmin, async (req, res) 
             stats: {
                 totalItems: 0,
                 lowStockCount: 0,
-                outOfStockCount: 0,
-                categoryCounts: {
-                    meat: 0,
-                    seafood: 0,
-                    dairy: 0,
-                    produce: 0,
-                    dry: 0,
-                    beverage: 0,
-                    packaging: 0
-                }
+                outOfStockCount: 0
             },
             initialItems: [],
             allCategories: [],
@@ -2849,80 +1999,97 @@ app.get("/admindashboard/addstaff", verifyToken, verifyAdmin, (req, res) => {
     res.render("addstaff");
 });
 
-app.get("/admindashboard/salesandreports", verifyToken, verifyAdmin, (req, res) => {
-    res.render("salesandreports", {
-        title: "Sales & Reports"
-    });
+app.get("/admindashboard/salesandreports", verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        const stats = await getDashboardStats();
+        res.render("salesandreports", {
+            title: "Sales & Reports",
+            stats: stats
+        });
+    } catch (error) {
+        res.render("salesandreports", {
+            title: "Sales & Reports",
+            stats: {
+                totalRevenue: 0,
+                todaysRevenue: 0,
+                totalOrders: 0,
+                todaysOrders: 0,
+                topSellingProducts: []
+            }
+        });
+    }
 });
 
 app.get("/admindashboard/infosettings", verifyToken, verifyAdmin, (req, res) => {
     res.render("infosettings");
 });
 
-app.get("/admindashboard/orderhistory", verifyToken, verifyAdmin, (req, res) => {
-    res.render("orderhistory");
+app.get("/admindashboard/orderhistory", verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        const stats = await getDashboardStats();
+        res.render("orderhistory", {
+            stats: stats
+        });
+    } catch (error) {
+        res.render("orderhistory", {
+            stats: {
+                totalOrders: 0,
+                todaysOrders: 0
+            }
+        });
+    }
 });
 
-// Menu Management page
 app.get("/admindashboard/menumanagement", verifyToken, verifyAdmin, async (req, res) => {
     try {
-        const menuItems = await MenuItem.find().sort({ itemName: 1 }).limit(50);
-        
-        // Get categories
-        const categories = await MenuItem.distinct("category", { isActive: true });
+        const [menuItems, categories, stats] = await Promise.all([
+            MenuItem.find().sort({ itemName: 1 }).limit(50),
+            MenuItem.distinct("category", { isActive: true }),
+            getDashboardStats()
+        ]);
         
         res.render("menumanagement", {
             user: req.user,
-            initialMenuItems: menuItems,
-            categories: categories || []
+            initialMenuItems: menuItems || [],
+            categories: categories || [],
+            stats: stats
         });
     } catch (error) {
         res.render("menumanagement", {
             user: req.user,
             initialMenuItems: [],
-            categories: []
+            categories: [],
+            stats: {
+                totalMenuItems: 0,
+                availableMenuItems: 0,
+                outOfStockMenuItems: 0,
+                topSellingProducts: []
+            }
         });
     }
 });
 
-// Stock page - shows raw ingredients stock
 app.get("/admindashboard/stock", verifyToken, verifyAdmin, async (req, res) => {
     try {
-        const lowStockItems = await InventoryItem.find({
-            itemType: 'raw',
-            currentStock: { $lt: LOW_STOCK_THRESHOLD, $gte: 1 },
-            isActive: true
-        })
-        .sort({ currentStock: 1 })
-        .lean();
-        
-        const outOfStockItems = await InventoryItem.find({
-            itemType: 'raw',
-            currentStock: 0,
-            isActive: true
-        })
-        .sort({ itemName: 1 })
-        .lean();
-        
-        // Add recipe info
-        const itemsWithRecipeInfo = [...lowStockItems, ...outOfStockItems].map(item => {
-            const itemObj = item;
-            const possibleDishes = recipeMapping[item.itemName];
-            
-            if (possibleDishes && possibleDishes.length > 0) {
-                itemObj.canMake = possibleDishes;
-            }
-            
-            return itemObj;
-        });
-        
-        const lowStockWithInfo = itemsWithRecipeInfo.filter(item => item.currentStock > 0);
-        const outOfStockWithInfo = itemsWithRecipeInfo.filter(item => item.currentStock === 0);
+        const [lowStockItems, outOfStockItems, stats] = await Promise.all([
+            InventoryItem.find({
+                itemType: 'raw',
+                currentStock: { $lt: LOW_STOCK_THRESHOLD, $gte: 1 },
+                isActive: true
+            }).sort({ currentStock: 1 }).lean(),
+            InventoryItem.find({
+                itemType: 'raw',
+                currentStock: 0,
+                isActive: true
+            }).sort({ itemName: 1 }).lean(),
+            getDashboardStats()
+        ]);
         
         res.render("stock", {
             user: req.user,
-            lowStockItems: lowStockWithInfo,
-            outOfStockItems: outOfStockWithInfo,
+            lowStockItems: lowStockItems || [],
+            outOfStockItems: outOfStockItems || [],
+            stats: stats,
             lowStockThreshold: LOW_STOCK_THRESHOLD
         });
     } catch (error) {
@@ -2930,31 +2097,20 @@ app.get("/admindashboard/stock", verifyToken, verifyAdmin, async (req, res) => {
             user: req.user,
             lowStockItems: [],
             outOfStockItems: [],
+            stats: {
+                inventoryLowStock: 0,
+                inventoryOutOfStock: 0
+            },
             lowStockThreshold: LOW_STOCK_THRESHOLD
         });
     }
 });
 
-// Recipe Management page
 app.get("/admindashboard/recipes", verifyToken, verifyAdmin, async (req, res) => {
     try {
-        // Get sample data for the recipes page
         const sampleIngredients = Object.keys(recipeMapping).slice(0, 20);
         const sampleDishes = Object.keys(reverseRecipeMapping).slice(0, 20);
-        
-        // Get some menu items with their recipe details
-        const menuItems = await MenuItem.find({ isActive: true })
-            .limit(10)
-            .lean();
-        
-        const menuItemsWithRecipes = [];
-        for (const item of menuItems) {
-            const recipeDetails = await getRecipeDetails(item.itemName);
-            menuItemsWithRecipes.push({
-                ...item,
-                recipeDetails
-            });
-        }
+        const menuItems = await MenuItem.find({ isActive: true }).limit(10).lean();
         
         res.render("recipes", {
             user: req.user,
@@ -2962,7 +2118,7 @@ app.get("/admindashboard/recipes", verifyToken, verifyAdmin, async (req, res) =>
             totalDishes: Object.keys(reverseRecipeMapping).length,
             sampleIngredients,
             sampleDishes,
-            menuItemsWithRecipes
+            menuItemsWithRecipes: menuItems || []
         });
     } catch (error) {
         console.error('Error loading recipes page:', error);
@@ -2977,72 +2133,51 @@ app.get("/admindashboard/recipes", verifyToken, verifyAdmin, async (req, res) =>
     }
 });
 
-// Customer management page
 app.get("/admindashboard/customers", verifyToken, verifyAdmin, async (req, res) => {
     try {
-        const customers = await Customer.find()
-            .sort({ lastOrderDate: -1 })
-            .limit(50)
-            .lean();
-        
-        // Get order stats for each customer
-        for (const customer of customers) {
-            const customerOrders = await Order.find({ customerId: customer.customerId });
-            customer.orderCount = customerOrders.length;
-            customer.totalSpent = customerOrders.reduce((sum, order) => sum + (order.total || 0), 0);
-        }
+        const [customers, stats] = await Promise.all([
+            Customer.find().sort({ lastOrderDate: -1 }).limit(50).lean(),
+            getDashboardStats()
+        ]);
         
         res.render("customers", {
             user: req.user,
-            customers: customers
+            customers: customers || [],
+            stats: stats
         });
     } catch (error) {
         console.error('Error loading customers page:', error);
         res.render("customers", {
             user: req.user,
-            customers: []
+            customers: [],
+            stats: {
+                totalCustomers: 0
+            }
         });
     }
 });
 
-// ==================== STAFF DASHBOARD ====================
-
 app.get("/staffdashboard", verifyToken, async (req, res) => {
     try {
-        // Quick check - if user is admin, redirect to admin dashboard
         if (req.user.role === "admin") {
             return res.redirect("/admindashboard");
         }
 
-        // Get available menu items (finished products)
-        const menuItems = await MenuItem.find({ 
-            status: 'available',
-            isActive: true 
-        }).sort({ itemName: 1 }).lean();
-        
-        // Get categories
-        const categories = await Category.find().lean();
-        
-        // Add availability info
-        const menuItemsWithAvailability = await Promise.all(menuItems.map(async (item) => {
-            const availability = await checkProductAvailability(item.itemName);
-            
-            return {
-                ...item,
-                isAvailable: availability.available,
-                missingIngredients: availability.missingIngredients,
-                canBeMade: availability.available
-            };
-        }));
+        const [menuItems, categories] = await Promise.all([
+            MenuItem.find({ 
+                status: 'available',
+                isActive: true 
+            }).sort({ itemName: 1 }).lean(),
+            Category.find().lean()
+        ]);
         
         res.render("staffdashboard", {
             user: req.user,
-            products: menuItemsWithAvailability,
-            categories: categories
+            products: menuItems || [],
+            categories: categories || []
         });
     } catch (err) {
         console.error('❌ Staff dashboard error:', err);
-        // Even if there's an error, render the page with empty data
         res.render("staffdashboard", {
             user: req.user,
             products: [],
@@ -3052,9 +2187,6 @@ app.get("/staffdashboard", verifyToken, async (req, res) => {
     }
 });
 
-// ==================== AUTHENTICATION ROUTES ====================
-
-// Static pages
 const pages = ["login", "register", "order"];
 pages.forEach(page => {
     app.get(`/${page.toLowerCase()}`, (req, res) => res.render(page));
@@ -3298,28 +2430,15 @@ app.post("/login", async (req, res) => {
     }
 });
 
-// ==================== HEALTH AND UTILITY ROUTES ====================
-
-// Health check endpoint
 app.get("/api/health", async (req, res) => {
     try {
-        const stats = {
-            status: "online",
-            timestamp: new Date().toISOString(),
-            database: mongoose.connection.readyState === 1 ? "connected" : "disconnected",
-            inventoryItems: await InventoryItem.countDocuments({ itemType: 'raw' }),
-            menuItems: await MenuItem.countDocuments(),
-            products: await Product.countDocuments(),
-            orders: await Order.countDocuments(),
-            customers: await Customer.countDocuments(),
-            recipeMapping: {
-                ingredients: Object.keys(recipeMapping).length,
-                dishes: Object.keys(reverseRecipeMapping).length
-            }
-        };
+        const stats = await getDashboardStats();
         
         res.json({
             success: true,
+            status: "online",
+            timestamp: new Date().toISOString(),
+            database: mongoose.connection.readyState === 1 ? "connected" : "disconnected",
             ...stats
         });
     } catch (error) {
@@ -3331,12 +2450,8 @@ app.get("/api/health", async (req, res) => {
     }
 });
 
-// Reset recipe mappings (for development)
 app.post("/api/recipes/reset", verifyToken, verifyAdmin, async (req, res) => {
     try {
-        // Note: In a real application, you would reload the recipe mapping
-        // from a database or configuration file
-        
         res.json({
             success: true,
             message: 'Recipe mappings are loaded from configuration',
@@ -3359,7 +2474,6 @@ app.get("/logout", (req, res) => {
     res.redirect("/login");
 });
 
-// Render login page
 app.get('/login', (req, res) => {
     res.render('login');
 });

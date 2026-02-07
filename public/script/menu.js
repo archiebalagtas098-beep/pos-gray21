@@ -10,7 +10,7 @@ let isModalOpen = false;
 let retryCount = 0;
 const MAX_RETRIES = 3;
 
-// Menu Database (as provided) - Keep this section exactly as is
+// Menu Database - Keep this section exactly as is
 const menuDatabase = {
     'Rice': [
         { name: 'Korean Spicy Bulgogi (Pork)', unit: 'plate', defaultPrice: 180 },
@@ -260,11 +260,11 @@ function loadFromLocalStorage() {
             }
         } else {
             console.log('📭 No localStorage backup found');
-            allMenuItems = []; // Start from 0
+            allMenuItems = [];
         }
     } catch (error) {
         console.error('❌ Error loading from localStorage:', error);
-        allMenuItems = []; // Start from 0
+        allMenuItems = [];
     }
 }
 
@@ -554,7 +554,7 @@ function checkOutOfStockItems() {
         const recentNotification = notifications.find(n => 
             n.productName === (item.name || item.itemName) && 
             n.message.includes('out of stock') &&
-            (Date.now() - n.id) < 3600000 // Less than 1 hour old
+            (Date.now() - n.id) < 3600000
         );
         
         if (!recentNotification) {
@@ -1006,7 +1006,7 @@ async function fetchMenuItems() {
             // Update all UI components
             updateAllUIComponents();
             
-            retryCount = 0; // Reset retry count
+            retryCount = 0;
             
         } else {
             console.error('❌ API returned error:', data.message);
@@ -1644,7 +1644,7 @@ function resetStockTransferForm() {
     const today = new Date().toISOString().split('T')[0];
     if (elements.transferDate) {
         elements.transferDate.value = today;
-        elements.transferDate.min = today; // Prevent selecting past dates
+        elements.transferDate.min = today;
     }
     
     updateStockTransferSummary();

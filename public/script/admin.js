@@ -5,18 +5,6 @@ let isConnected = false;
 let reconnectAttempts = 0;
 const MAX_RECONNECT_ATTEMPTS = 5;
 
-// Store sales data for chart scaling
-let salesChartData = {
-    last7Days: [],
-    dailySales: [],
-    maxDailySale: 0,
-    todaySales: 0
-};
-
-// Animation state
-let chartAnimationInProgress = false;
-
-// Dashboard stats
 let dashboardStats = {
     totalOrders: 0,
     totalRevenue: 0,
@@ -25,12 +13,14 @@ let dashboardStats = {
     todaysOrders: 0,
     todaysRevenue: 0,
     inventoryLowStock: 0,
-    inventoryOutOfStock: 0
+    inventoryOutOfStock: 0,
+    totalInventory: 0
 };
 
-// Data storage
 let allOrders = [];
 let allMenuItems = [];
+let allInventory = [];
+let allCustomers = [];
 let topSellingProducts = [];
 
 // ==================== UTILITY FUNCTIONS ====================
@@ -43,52 +33,22 @@ function formatCurrency(amount) {
     if (amount === undefined || amount === null || isNaN(amount)) {
         return '₱0.00';
     }
-    
     const numAmount = parseFloat(amount);
-    if (numAmount === 0) return '₱0.00';
-    
     return '₱' + numAmount.toFixed(2).replace(/\d(?=(\d{3})+\.)/g, '$&,');
 }
 
-function formatCurrencySimple(amount) {
-    if (amount === undefined || amount === null || isNaN(amount)) {
-        return '₱0.00';
-    }
-    
-    const numAmount = parseFloat(amount);
-    if (numAmount === 0) return '₱0.00';
-    
-    // For smaller numbers, don't show decimals if they're .00
-    if (numAmount < 1000) {
-        if (numAmount % 1 === 0) {
-            return '₱' + numAmount.toFixed(0);
-        }
-    }
-    
-    return '₱' + numAmount.toFixed(2).replace(/\d(?=(\d{3})+\.)/g, '$&,');
-}
-
-function formatDate(dateString) {
-    if (!dateString) return 'N/A';
-    try {
-        const date = new Date(dateString);
-        return date.toLocaleDateString('en-PH', {
-            year: 'numeric',
-            month: 'short',
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit'
-        });
-    } catch (error) {
-        return 'N/A';
-    }
+function formatDate(date) {
+    if (!date) return 'N/A';
+    return new Date(date).toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
+    });
 }
 
 // ==================== API FUNCTIONS ====================
 async function fetchApi(endpoint, options = {}) {
     try {
-        console.log(`📡 Fetching: ${endpoint}`);
-        
         const response = await fetch(endpoint, {
             credentials: 'include',
             headers: {
@@ -99,991 +59,848 @@ async function fetchApi(endpoint, options = {}) {
         });
         
         if (!response.ok) {
-            console.error(`❌ API ${endpoint} returned ${response.status}: ${response.statusText}`);
-            return { success: false, message: `HTTP ${response.status}` };
+            console.error(`API Error ${response.status}: ${response.statusText}`);
+            return { success: false, status: response.status };
         }
         
         const data = await response.json();
-        console.log(`✅ API ${endpoint} response received`);
         return data;
     } catch (error) {
-        console.error(`❌ Error fetching ${endpoint}:`, error.message);
+        console.error(`Fetch error for ${endpoint}:`, error);
         return { success: false, message: error.message };
     }
 }
 
-// ==================== DASHBOARD STATS ====================
-async function fetchDashboardStats() {
+// ==================== DASHBOARD DATA FETCHING ====================
+async function fetchAllData() {
     try {
-        console.log('📊 Fetching dashboard stats...');
+        console.log('Fetching all dashboard data...');
         
-        // Fetch stats from API
-        const statsResponse = await fetchApi('/api/dashboard/stats');
+        // Show loading state
+        showLoading(true);
         
-        if (statsResponse && statsResponse.success && statsResponse.data) {
-            // Update dashboard stats with API data
-            Object.assign(dashboardStats, statsResponse.data);
-            console.log('✅ Dashboard stats loaded from API');
-        } else {
-            console.log('⚠️ Using empty stats - no data available');
-            await setEmptyStats();
-        }
-        
-        // Update UI
-        updateDashboardUI();
-        
-        // Fetch additional data
-        await Promise.allSettled([
-            loadOrders(),
-            loadMenuItems(),
-            loadTopSellingProducts(),
-            loadInventoryStatus()
+        // Fetch all data in parallel
+        const [ordersData, menuData, inventoryData, customersData, topSellingData] = await Promise.allSettled([
+            fetchApi('/api/orders'),
+            fetchApi('/api/menu'),
+            fetchApi('/api/inventory'),
+            fetchApi('/api/customers'),
+            fetchApi('/api/orders/top-selling')
         ]);
+
+        console.log('Data fetch results:', {
+            orders: ordersData.status,
+            menu: menuData.status,
+            inventory: inventoryData.status,
+            customers: customersData.status,
+            topSelling: topSellingData.status
+        });
+
+        // Process orders
+        if (ordersData.status === 'fulfilled' && ordersData.value?.success) {
+            allOrders = Array.isArray(ordersData.value.data) ? ordersData.value.data : [];
+            console.log(`Loaded ${allOrders.length} orders`);
+        } else {
+            console.warn('Failed to load orders, using empty array');
+            allOrders = [];
+        }
+
+        // Process menu items
+        if (menuData.status === 'fulfilled' && menuData.value?.success) {
+            allMenuItems = Array.isArray(menuData.value.data) ? menuData.value.data : [];
+            console.log(`Loaded ${allMenuItems.length} menu items`);
+        } else {
+            console.warn('Failed to load menu items, using empty array');
+            allMenuItems = [];
+        }
+
+        // Process inventory
+        if (inventoryData.status === 'fulfilled' && inventoryData.value?.success) {
+            allInventory = Array.isArray(inventoryData.value.data) ? inventoryData.value.data : [];
+            console.log(`Loaded ${allInventory.length} inventory items`);
+        } else {
+            console.warn('Failed to load inventory, using empty array');
+            allInventory = [];
+        }
+
+        // Process customers
+        if (customersData.status === 'fulfilled' && customersData.value?.success) {
+            allCustomers = Array.isArray(customersData.value.data) ? customersData.value.data : [];
+            console.log(`Loaded ${allCustomers.length} customers`);
+        } else {
+            console.warn('Failed to load customers, using empty array');
+            allCustomers = [];
+        }
+
+        // Process top selling products
+        if (topSellingData.status === 'fulfilled' && topSellingData.value?.success) {
+            topSellingProducts = Array.isArray(topSellingData.value.data) ? topSellingData.value.data : [];
+            console.log(`Loaded ${topSellingProducts.length} top selling products from API`);
+        } else {
+            console.warn('Failed to load top selling products from API, will calculate from orders');
+            topSellingProducts = [];
+        }
+
+        // If no top selling data from API, calculate from orders
+        if (topSellingProducts.length === 0 && allOrders.length > 0) {
+            console.log('Calculating top selling products from orders...');
+            calculateTopSellingFromOrders();
+        }
+
+        // Calculate statistics
+        calculateDashboardStats();
         
-        // Render chart with latest data
-        renderSalesChart(dashboardStats);
-        
-    } catch (error) {
-        console.error('❌ Error fetching dashboard stats:', error);
-        await setEmptyStats();
+        // Update all UI components
         updateDashboardUI();
+        updateRecentOrdersTable();
+        updateTopItemsTable();
+        updateInventoryStatusTable();
+        renderSalesChart();
+
+        console.log('Dashboard data updated successfully');
+        showNotification('Dashboard updated successfully', 'success');
+
+    } catch (error) {
+        console.error('Error fetching dashboard data:', error);
+        showNotification('Error updating dashboard data', 'error');
+        
+        // Keep existing data and try to calculate stats
+        calculateDashboardStats();
+        updateDashboardUI();
+    } finally {
+        showLoading(false);
     }
 }
 
-async function setEmptyStats() {
-    console.log('🔄 Setting empty stats...');
+// ==================== DASHBOARD STATS CALCULATION ====================
+function calculateDashboardStats() {
+    console.log('Calculating dashboard statistics...');
     
-    dashboardStats = {
-        totalOrders: 0,
-        totalRevenue: 0,
-        totalCustomers: 0,
-        totalProducts: 0,
-        todaysOrders: 0,
-        todaysRevenue: 0,
-        inventoryLowStock: 0,
-        inventoryOutOfStock: 0
-    };
+    // Get today's date for filtering
+    const today = new Date();
+    const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const todayEnd = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
     
-    console.log('✅ Stats reset to 0:', dashboardStats);
-}
-
-function updateDashboardUI() {
-    console.log('🔄 Updating dashboard UI...');
+    // Initialize counters
+    let totalRevenue = 0;
+    let todaysRevenue = 0;
+    let todaysOrders = 0;
     
-    // Update all dashboard elements
-    const elements = {
-        'totalOrders': { value: dashboardStats.totalOrders, type: 'number' },
-        'totalRevenue': { value: dashboardStats.totalRevenue, type: 'currency' },
-        'totalCustomers': { value: dashboardStats.totalCustomers, type: 'number' },
-        'totalProducts': { value: dashboardStats.totalProducts, type: 'number' },
-        'todaysOrders': { value: dashboardStats.todaysOrders, type: 'number' },
-        'todaysRevenue': { value: dashboardStats.todaysRevenue, type: 'currency' }
-    };
+    // Track unique customers from orders (for fallback)
+    const uniqueCustomerIds = new Set();
     
-    Object.entries(elements).forEach(([id, data]) => {
-        const element = document.getElementById(id);
-        if (element) {
-            const oldValue = element.textContent.trim();
-            let newValue = '';
-            
-            if (data.type === 'currency') {
-                newValue = formatCurrency(data.value);
-            } else {
-                newValue = formatNumber(data.value);
-            }
-            
-            if (oldValue !== newValue && oldValue !== '') {
-                // Animate the change
-                animateValueChange(element, oldValue, newValue);
-            } else if (oldValue === '') {
-                element.textContent = newValue;
-                fadeInElement(element, 200);
-            }
+    // 1. CALCULATE FROM ORDERS:
+    // - Total Orders (count of all orders)
+    // - Today's Orders (orders created today)
+    // - Total Revenue (sum of all order totals)
+    // - Today's Revenue (sum of today's order totals)
+    
+    allOrders.forEach(order => {
+        if (!order || typeof order !== 'object') return;
+        
+        // Get order total safely
+        const orderTotal = parseFloat(order.total || order.totalAmount || order.amount || 0);
+        if (!isNaN(orderTotal)) {
+            totalRevenue += orderTotal;
+        }
+        
+        // Check if order is from today
+        const orderDate = order.createdAt ? new Date(order.createdAt) : 
+                         order.date ? new Date(order.date) : 
+                         new Date();
+        
+        if (orderDate >= todayStart && orderDate < todayEnd) {
+            todaysOrders++;
+            todaysRevenue += orderTotal;
+        }
+        
+        // Track customer from order (for fallback customer count)
+        if (order.customerId) {
+            uniqueCustomerIds.add(order.customerId.toString());
+        } else if (order.customerName && order.customerName !== 'Walk-in Customer') {
+            uniqueCustomerIds.add(order.customerName);
         }
     });
     
-    console.log('✅ Dashboard UI updated');
-}
-
-function animateValueChange(element, oldValue, newValue) {
-    element.style.transition = 'all 0.3s ease';
-    element.style.transform = 'scale(1.1)';
-    element.style.color = '#4CAF50';
+    // 2. CALCULATE FROM CUSTOMERS API:
+    // - Total Customers (primary source)
+    let totalCustomersCount = allCustomers.length;
     
-    setTimeout(() => {
-        element.textContent = newValue;
-        element.style.transform = 'scale(1)';
+    // If no customers from API but we have orders with customers, use that as fallback
+    if (totalCustomersCount === 0 && uniqueCustomerIds.size > 0) {
+        totalCustomersCount = uniqueCustomerIds.size;
+        console.log(`Using ${totalCustomersCount} unique customers from orders as fallback`);
+    }
+    
+    // 3. CALCULATE FROM INVENTORY:
+    // - Total Inventory Items (count)
+    // - Inventory Status (low stock, out of stock)
+    let lowStockCount = 0;
+    let outOfStockCount = 0;
+    
+    allInventory.forEach(item => {
+        if (!item || typeof item !== 'object') return;
         
-        setTimeout(() => {
-            element.style.color = '';
-        }, 300);
-    }, 150);
+        const stock = parseFloat(item.currentStock || item.stock || item.quantity || 0);
+        const minStock = parseFloat(item.minStock || item.minimumStock || item.reorderLevel || 5);
+        
+        if (isNaN(stock)) return;
+        
+        if (stock <= 0) {
+            outOfStockCount++;
+        } else if (stock <= minStock) {
+            lowStockCount++;
+        }
+    });
+    
+    // 4. GET FROM MENU:
+    // - Total Products (count of all menu items)
+    
+    // Update dashboard stats object
+    dashboardStats = {
+        totalOrders: allOrders.length,              // From orders
+        totalRevenue: totalRevenue,                 // From orders
+        totalCustomers: totalCustomersCount,        // From customers API (or orders fallback)
+        totalProducts: allMenuItems.length,         // From menu API
+        todaysOrders: todaysOrders,                 // From orders (filtered by today)
+        todaysRevenue: todaysRevenue,               // From orders (filtered by today)
+        inventoryLowStock: lowStockCount,           // From inventory
+        inventoryOutOfStock: outOfStockCount,       // From inventory
+        totalInventory: allInventory.length         // From inventory
+    };
+    
+    console.log('Dashboard stats calculated:', dashboardStats);
 }
 
-// ==================== ORDER MANAGEMENT ====================
-async function loadOrders() {
-    try {
-        console.log('📋 Loading orders...');
+// ==================== UI UPDATES ====================
+function updateDashboardUI() {
+    console.log('Updating dashboard UI with stats:', dashboardStats);
+    
+    // Update main stat cards
+    updateStatCard('totalOrders', dashboardStats.totalOrders, 'number');
+    updateStatCard('totalRevenue', dashboardStats.totalRevenue, 'currency');
+    updateStatCard('totalCustomers', dashboardStats.totalCustomers, 'number');
+    updateStatCard('totalProducts', dashboardStats.totalProducts, 'number');
+    updateStatCard('todaysOrders', dashboardStats.todaysOrders, 'number');
+    updateStatCard('todaysRevenue', dashboardStats.todaysRevenue, 'currency');
+    
+    // Update inventory card
+    updateInventoryStatsUI();
+}
+
+function updateStatCard(elementId, value, type) {
+    const element = document.getElementById(elementId);
+    if (!element) {
+        console.warn(`Element ${elementId} not found`);
+        return;
+    }
+
+    const oldValue = element.textContent.trim();
+    let newValue = type === 'currency' ? formatCurrency(value) : formatNumber(value);
+
+    if (oldValue !== newValue) {
+        // Add animation class
+        element.classList.add('stat-value-updating');
         
-        // Try API endpoint
-        const data = await fetchApi('/api/orders?limit=50');
+        // Update value
+        element.textContent = newValue;
         
-        if (data && data.success && data.data && Array.isArray(data.data)) {
-            allOrders = data.data;
-            console.log(`✅ Orders loaded: ${allOrders.length}`);
-        } else {
-            console.log('✅ No orders found - starting fresh');
-            allOrders = [];
-        }
-        
-        // Update recent orders table
-        updateRecentOrdersTable();
-        
-    } catch (error) {
-        console.error('❌ Error loading orders:', error);
-        allOrders = [];
-        updateRecentOrdersTable();
+        // Remove animation class after animation completes
+        setTimeout(() => {
+            element.classList.remove('stat-value-updating');
+        }, 500);
     }
 }
 
+function updateInventoryStatsUI() {
+    // Update total inventory count
+    const totalInventoryElement = document.getElementById('totalInventory');
+    if (totalInventoryElement) {
+        const inventoryText = `${formatNumber(dashboardStats.totalInventory)} items`;
+        if (totalInventoryElement.textContent !== inventoryText) {
+            totalInventoryElement.textContent = inventoryText;
+        }
+    }
+    
+    // Update inventory status if elements exist
+    const lowStockElement = document.getElementById('inventoryLowStock');
+    const outOfStockElement = document.getElementById('inventoryOutOfStock');
+    
+    if (lowStockElement) {
+        lowStockElement.textContent = formatNumber(dashboardStats.inventoryLowStock);
+        if (dashboardStats.inventoryLowStock > 0) {
+            lowStockElement.style.color = '#FF9800';
+            lowStockElement.style.fontWeight = 'bold';
+        } else {
+            lowStockElement.style.color = '';
+            lowStockElement.style.fontWeight = '';
+        }
+    }
+    
+    if (outOfStockElement) {
+        outOfStockElement.textContent = formatNumber(dashboardStats.inventoryOutOfStock);
+        if (dashboardStats.inventoryOutOfStock > 0) {
+            outOfStockElement.style.color = '#f44336';
+            outOfStockElement.style.fontWeight = 'bold';
+        } else {
+            outOfStockElement.style.color = '';
+            outOfStockElement.style.fontWeight = '';
+        }
+    }
+}
+
+// ==================== RECENT ORDERS TABLE ====================
 function updateRecentOrdersTable() {
     const tableBody = document.getElementById('ordersTableBody');
-    if (!tableBody) return;
-    
+    if (!tableBody) {
+        console.warn('Recent orders table body not found');
+        return;
+    }
+
     // Clear table
     tableBody.innerHTML = '';
-    
+
     if (allOrders.length === 0) {
         tableBody.innerHTML = `
             <tr>
                 <td colspan="4" style="text-align: center; padding: 20px; color: #666;">
-                    <i class="fas fa-clipboard-check"></i> No orders found
+                    No orders found
                 </td>
             </tr>
         `;
         return;
     }
-    
+
     // Sort by date (newest first) and take top 10
     const recentOrders = [...allOrders]
+        .filter(order => order && order.createdAt)
         .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
         .slice(0, 10);
-    
-    // Add rows
+
     recentOrders.forEach((order, index) => {
         const row = document.createElement('tr');
-        const orderTime = new Date(order.createdAt || Date.now());
-        const timeString = orderTime.toLocaleTimeString('en-US', { 
+        const orderDate = new Date(order.createdAt || Date.now());
+        const timeString = orderDate.toLocaleTimeString('en-US', { 
             hour: '2-digit', 
             minute: '2-digit',
             hour12: true 
-        }).toLowerCase();
-        
-        const totalAmount = parseFloat(order.total || order.totalAmount || 0);
-        const customerName = order.customerName || order.customer || 'Walk-in Customer';
-        const orderNumber = order.orderNumber || `ORD-${(order._id || '0000').toString().substring(0, 8)}`;
-        
+        });
+
+        const totalAmount = parseFloat(order.total || 0);
+        const customerName = order.customerName || order.customerId || 'Walk-in Customer';
+        const orderNumber = order.orderNumber || `ORD-${(order._id || '').toString().substring(0, 8) || (index + 1)}`;
+
         row.innerHTML = `
             <td>${orderNumber}</td>
             <td>${timeString}</td>
             <td>${customerName}</td>
             <td>${formatCurrency(totalAmount)}</td>
         `;
-        
-        // Add fade-in animation with delay
+
+        // Add animation
         row.style.opacity = '0';
         row.style.transform = 'translateY(10px)';
-        row.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
-        
         tableBody.appendChild(row);
-        
+
         // Animate row appearance
         setTimeout(() => {
+            row.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
             row.style.opacity = '1';
             row.style.transform = 'translateY(0)';
         }, index * 50);
     });
 }
 
-// ==================== MENU ITEMS ====================
-async function loadMenuItems() {
-    try {
-        console.log('🍽️ Loading menu items...');
-        
-        const data = await fetchApi('/api/menu');
-        
-        if (data && data.success && data.data) {
-            allMenuItems = data.data;
-            console.log(`✅ Menu items loaded: ${allMenuItems.length}`);
-        } else {
-            console.log('✅ No menu items found');
-            allMenuItems = [];
-        }
-        
-        // Update products count
-        dashboardStats.totalProducts = allMenuItems.length;
-        
-    } catch (error) {
-        console.error('❌ Error loading menu items:', error);
-        allMenuItems = [];
-    }
-}
-
 // ==================== TOP SELLING PRODUCTS ====================
-async function loadTopSellingProducts() {
-    try {
-        console.log('📈 Loading top selling products...');
+function calculateTopSellingFromOrders() {
+    console.log('Calculating top selling products from orders data...');
+    
+    const productSales = {};
+    let productCount = 0;
+
+    allOrders.forEach(order => {
+        if (!order || !order.items || !Array.isArray(order.items)) return;
         
-        const data = await fetchApi('/api/orders/top-selling?limit=10');
-        
-        if (data && data.success && data.data) {
-            topSellingProducts = data.data;
-            console.log(`✅ Top selling products loaded: ${topSellingProducts.length}`);
-        } else {
-            console.log('✅ No top selling products - no sales data');
-            topSellingProducts = [];
-        }
-        
-        updateTopItemsTable();
-        
-    } catch (error) {
-        console.error('❌ Error loading top selling products:', error);
-        topSellingProducts = [];
-        updateTopItemsTable();
-    }
+        order.items.forEach(item => {
+            if (!item || !item.name) return;
+            
+            const productName = item.name;
+            const quantity = parseFloat(item.quantity || 1);
+            const price = parseFloat(item.price || item.menuPrice || 0);
+            
+            if (isNaN(quantity) || isNaN(price)) return;
+            
+            const revenue = quantity * price;
+
+            if (!productSales[productName]) {
+                productSales[productName] = {
+                    name: productName,
+                    totalQuantity: 0,
+                    totalRevenue: 0
+                };
+            }
+
+            productSales[productName].totalQuantity += quantity;
+            productSales[productName].totalRevenue += revenue;
+            productCount++;
+        });
+    });
+
+    topSellingProducts = Object.values(productSales)
+        .sort((a, b) => b.totalRevenue - a.totalRevenue)
+        .slice(0, 10);
+    
+    console.log(`Calculated ${topSellingProducts.length} top selling products from ${productCount} items`);
 }
 
 function updateTopItemsTable() {
     const tableBody = document.getElementById('topItemsTableBody');
-    if (!tableBody) return;
-    
+    if (!tableBody) {
+        console.warn('Top items table body not found');
+        return;
+    }
+
     tableBody.innerHTML = '';
-    
+
     if (topSellingProducts.length === 0) {
         tableBody.innerHTML = `
             <tr>
                 <td colspan="3" style="text-align: center; padding: 20px; color: #666;">
-                    <i class="fas fa-chart-bar"></i> No sales data available
+                    No sales data available
                 </td>
             </tr>
         `;
         return;
     }
-    
+
     topSellingProducts.forEach((product, index) => {
         const row = document.createElement('tr');
-        const displayName = product.name.length > 25 
+        const displayName = product.name?.length > 25 
             ? product.name.substring(0, 25) + '...' 
             : product.name;
-        
-        // Determine status based on rank
+
         let status = 'Normal';
         let statusClass = 'status-normal';
-        
+
         if (index < 3) {
             status = 'Bestseller';
             statusClass = 'status-hot';
         } else if (product.totalRevenue > 5000) {
             status = 'Popular';
             statusClass = 'status-trending';
-        } else if (product.totalRevenue === 0) {
-            status = 'No Sales';
-            statusClass = 'status-new';
         }
-        
+
         row.innerHTML = `
             <td title="${product.name}">${displayName}</td>
             <td>${formatCurrency(product.totalRevenue)}</td>
             <td><span class="status-badge ${statusClass}">${status}</span></td>
         `;
-        
+
         tableBody.appendChild(row);
     });
 }
 
-// ==================== INVENTORY STATUS ====================
-async function loadInventoryStatus() {
-    try {
-        console.log('📦 Loading inventory status...');
-        
-        const data = await fetchApi('/api/inventory');
-        
-        if (data && data.success && data.data) {
-            updateInventoryStatusTable(data.data);
-            console.log(`✅ Inventory items loaded: ${data.data.length}`);
-        } else {
-            console.log('✅ No inventory items found');
-            updateInventoryStatusTable([]);
-        }
-        
-    } catch (error) {
-        console.error('❌ Error loading inventory:', error);
-        updateInventoryStatusTable([]);
-    }
-}
-
-function updateInventoryStatusTable(items) {
+// ==================== INVENTORY STATUS TABLE ====================
+function updateInventoryStatusTable() {
     const tableBody = document.getElementById('inventoryTableBody');
-    if (!tableBody) return;
-    
+    if (!tableBody) {
+        console.warn('Inventory table body not found');
+        return;
+    }
+
     tableBody.innerHTML = '';
-    
-    if (!items || items.length === 0) {
+
+    if (!allInventory || allInventory.length === 0) {
         tableBody.innerHTML = `
             <tr>
                 <td colspan="3" style="text-align: center; padding: 20px; color: #666;">
-                    <i class="fas fa-boxes"></i> No inventory items available
+                    No inventory items available
                 </td>
             </tr>
         `;
         return;
     }
-    
-    // Count low stock and out of stock items
-    let lowStockCount = 0;
-    let outOfStockCount = 0;
-    
-    // Sort by stock level (lowest first)
-    const sortedItems = [...items]
+
+    // Sort by stock level (lowest first) and take top 10
+    const sortedItems = [...allInventory]
+        .filter(item => item && item.itemName)
         .map(item => {
             const stock = parseFloat(item.currentStock || item.stock || 0);
-            const minStock = parseFloat(item.minStock || 5);
-            
+            const minStock = parseFloat(item.minStock || item.minimumStock || 5);
+
             let status = 'In Stock';
             let statusClass = 'status-in-stock';
-            
+
             if (stock <= 0) {
                 status = 'Out of Stock';
                 statusClass = 'status-out-of-stock';
-                outOfStockCount++;
             } else if (stock <= minStock) {
                 status = 'Low Stock';
                 statusClass = 'status-low-stock';
-                lowStockCount++;
             }
-            
+
             return {
-                ...item,
-                displayStock: stock,
+                name: item.itemName || item.name || 'Unknown Item',
+                stock: stock,
+                unit: item.unit || 'units',
                 status,
                 statusClass
             };
         })
-        .sort((a, b) => a.displayStock - b.displayStock)
+        .sort((a, b) => a.stock - b.stock)
         .slice(0, 10);
-    
-    // Update dashboard stats
-    dashboardStats.inventoryLowStock = lowStockCount;
-    dashboardStats.inventoryOutOfStock = outOfStockCount;
-    
+
     // Create table rows
-    sortedItems.forEach(item => {
+    sortedItems.forEach((item, index) => {
         const row = document.createElement('tr');
-        const displayName = item.itemName || item.name || 'Unknown Item';
-        const truncatedName = displayName.length > 20 
-            ? displayName.substring(0, 20) + '...' 
-            : displayName;
-        
+        const truncatedName = item.name.length > 20 
+            ? item.name.substring(0, 20) + '...' 
+            : item.name;
+
         row.innerHTML = `
-            <td title="${displayName}">${truncatedName}</td>
-            <td>${formatNumber(item.displayStock)} ${item.unit || 'units'}</td>
+            <td title="${item.name}">${truncatedName}</td>
+            <td>${formatNumber(item.stock)} ${item.unit}</td>
             <td><span class="status-badge ${item.statusClass}">${item.status}</span></td>
         `;
-        
+
+        // Add row animation
+        row.style.opacity = '0';
         tableBody.appendChild(row);
+
+        setTimeout(() => {
+            row.style.transition = 'opacity 0.3s ease';
+            row.style.opacity = '1';
+        }, index * 100);
     });
 }
 
-// ==================== CHART FUNCTIONS ====================
-function renderSalesChart(stats) {
+// ==================== SALES CHART ====================
+function renderSalesChart() {
     const chartBars = document.getElementById('chartBars');
     const chartSummary = document.getElementById('chartSummary');
-    const graphStatus = document.getElementById('graphStatus');
-    
-    if (!chartBars) return;
-    
-    // Clear with fade out
-    chartBars.style.opacity = '0';
-    chartBars.style.transition = 'opacity 0.3s ease';
-    
-    setTimeout(() => {
-        chartBars.innerHTML = '';
-        
-        // Generate last 7 days sales data (all zeros initially)
-        const salesData = generateEmptySalesData();
-        
-        // Find maximum sales for scaling
-        const maxDailySale = Math.max(...salesData.map(day => day.amount));
-        const hasSales = maxDailySale > 0;
-        
-        // Create bars
-        const bars = [];
-        const targetHeights = [];
-        const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-        
-        salesData.forEach((dayData, index) => {
-            const bar = document.createElement('div');
-            const dayName = dayNames[new Date(dayData.date).getDay()];
-            const isToday = index === 6;
-            
-            // Calculate height percentage (10% for zero sales)
-            let heightPercentage = 10;
-            
-            // Create bar element
-            bar.className = 'chart-bar';
-            bar.style.cssText = `
-                height: 0%;
-                background: #F5F5F5;
-                margin: 0 6px;
-                border-radius: 4px 4px 0 0;
-                flex: 1;
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-                justify-content: flex-end;
-                position: relative;
-                cursor: pointer;
-                opacity: 0;
-                transform: translateY(20px);
-                transition: all 0.3s ease ${index * 100}ms;
-            `;
-            
-            // Add hover tooltip
-            bar.title = `${dayName}: ${formatCurrencySimple(dayData.amount)}`;
-            
-            // Create amount label
-            const amountLabel = document.createElement('div');
-            amountLabel.className = 'chart-amount-label';
-            amountLabel.textContent = formatCurrencySimple(dayData.amount);
-            bar.appendChild(amountLabel);
-            
-            // Create day label
-            const dayLabel = document.createElement('div');
-            dayLabel.className = 'chart-day-label';
-            dayLabel.textContent = dayName;
-            bar.appendChild(dayLabel);
-            
-            // Add hover effects
-            bar.addEventListener('mouseenter', () => {
-                if (!chartAnimationInProgress) {
-                    bar.style.transform = 'translateY(-10px)';
-                    amountLabel.style.opacity = '1';
-                }
-            });
-            
-            bar.addEventListener('mouseleave', () => {
-                if (!chartAnimationInProgress) {
-                    bar.style.transform = 'translateY(0)';
-                    amountLabel.style.opacity = '0';
-                }
-            });
-            
-            // Store for animation
-            bars.push(bar);
-            targetHeights.push(heightPercentage);
-            
-            // Add to chart
-            chartBars.appendChild(bar);
+    if (!chartBars) {
+        console.warn('Chart bars element not found');
+        return;
+    }
+
+    chartBars.innerHTML = '';
+
+    const last7Days = generateLast7DaysSales();
+    const today = new Date().toISOString().split('T')[0];
+    const todaySales = last7Days.find(day => day.date === today)?.amount || 0;
+    const maxSale = Math.max(...last7Days.map(day => day.amount), 1);
+
+    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+    last7Days.forEach((dayData, index) => {
+        const bar = document.createElement('div');
+        const dayName = dayNames[new Date(dayData.date).getDay()];
+        const isToday = dayData.date === today;
+        const heightPercentage = Math.max((dayData.amount / maxSale) * 100, 5);
+
+        bar.className = 'chart-bar';
+        bar.innerHTML = `
+            <div class="chart-amount-label">${formatCurrency(dayData.amount)}</div>
+            <div class="chart-day-label">${dayName}</div>
+        `;
+
+        bar.style.cssText = `
+            height: 0%;
+            background: ${isToday ? 'linear-gradient(180deg, #4CAF50, #2E7D32)' : 'linear-gradient(180deg, #448aff, #2979ff)'};
+            margin: 0 6px;
+            border-radius: 4px 4px 0 0;
+            flex: 1;
+            position: relative;
+            cursor: pointer;
+            opacity: 0;
+            transform: translateY(20px);
+        `;
+
+        // Add hover effects
+        bar.addEventListener('mouseenter', () => {
+            bar.style.transform = 'translateY(-5px)';
+            bar.style.boxShadow = '0 5px 15px rgba(0,0,0,0.2)';
+            bar.querySelector('.chart-amount-label').style.opacity = '1';
         });
-        
-        // Update status text
-        if (graphStatus) {
-            graphStatus.textContent = 'No sales recorded yet';
-            graphStatus.style.color = '#FF9800';
-        }
-        
-        // Update summary
-        if (chartSummary) {
-            chartSummary.textContent = 'Today: ₱0.00';
-            chartSummary.style.color = '#FF9800';
-        }
-        
-        // Fade in chart container
-        chartBars.style.opacity = '1';
-        
-        // Animate bars
+
+        bar.addEventListener('mouseleave', () => {
+            bar.style.transform = 'translateY(0)';
+            bar.style.boxShadow = 'none';
+            bar.querySelector('.chart-amount-label').style.opacity = '0';
+        });
+
+        chartBars.appendChild(bar);
+
+        // Animate bar appearance
         setTimeout(() => {
-            bars.forEach((bar, index) => {
-                bar.style.opacity = '1';
-                bar.style.transform = 'translateY(0)';
-            });
-            
-            // Start bar growth animation
+            bar.style.opacity = '1';
+            bar.style.transform = 'translateY(0)';
+            bar.style.transition = 'all 0.3s ease, height 1s cubic-bezier(0.4, 0, 0.2, 1)';
             setTimeout(() => {
-                animateChartBars(bars, targetHeights, 1000);
-            }, 300);
-        }, 100);
-        
-    }, 300);
+                bar.style.height = `${heightPercentage}%`;
+            }, 100);
+        }, index * 100);
+    });
+
+    if (chartSummary) {
+        chartSummary.textContent = `Today: ${formatCurrency(todaySales)}`;
+        chartSummary.style.color = todaySales > 0 ? '#4CAF50' : '#FF9800';
+        chartSummary.style.fontWeight = 'bold';
+    }
 }
 
-function generateEmptySalesData() {
-    const today = new Date();
+function generateLast7DaysSales() {
     const salesData = [];
-    
-    // Generate last 7 days with zero sales
+    const today = new Date();
+
     for (let i = 6; i >= 0; i--) {
         const date = new Date(today);
         date.setDate(date.getDate() - i);
-        
+        const dateString = date.toISOString().split('T')[0];
+
+        let daySales = 0;
+        const dayOrders = allOrders.filter(order => {
+            if (!order || !order.createdAt) return false;
+            const orderDate = new Date(order.createdAt);
+            return orderDate.toISOString().split('T')[0] === dateString;
+        });
+
+        dayOrders.forEach(order => {
+            daySales += parseFloat(order.total || 0);
+        });
+
         salesData.push({
-            date: date.toISOString(),
-            amount: 0,
-            isToday: i === 6
+            date: dateString,
+            amount: daySales,
+            ordersCount: dayOrders.length
         });
     }
-    
+
     return salesData;
 }
 
-function animateChartBars(bars, targetHeights, duration = 1000) {
-    if (chartAnimationInProgress) return;
-    chartAnimationInProgress = true;
-    
-    const startTime = performance.now();
-    
-    function updateAnimation(currentTime) {
-        const elapsed = currentTime - startTime;
-        const progress = Math.min(elapsed / duration, 1);
-        
-        // Easing function
-        const easeOut = 1 - Math.pow(1 - progress, 3);
-        
-        bars.forEach((bar, index) => {
-            const targetHeight = targetHeights[index];
-            const currentHeight = targetHeight * easeOut;
-            
-            bar.style.height = `${currentHeight}%`;
-        });
-        
-        if (progress < 1) {
-            requestAnimationFrame(updateAnimation);
-        } else {
-            chartAnimationInProgress = false;
-        }
-    }
-    
-    requestAnimationFrame(updateAnimation);
-}
-
-function animateValue(element, start, end, duration = 1000, prefix = '', suffix = '') {
-    if (!element) return Promise.resolve();
-    
-    return new Promise(resolve => {
-        const startTime = performance.now();
-        const isCurrency = prefix === '₱';
-        
-        function updateValue(currentTime) {
-            const elapsed = currentTime - startTime;
-            const progress = Math.min(elapsed / duration, 1);
-            
-            // Easing function
-            const easeOut = 1 - Math.pow(1 - progress, 3);
-            const currentValue = start + (end - start) * easeOut;
-            
-            if (isCurrency) {
-                element.textContent = `${prefix}${currentValue.toFixed(2)}`;
-            } else if (suffix === '%') {
-                element.textContent = `${currentValue.toFixed(1)}${suffix}`;
-            } else {
-                element.textContent = formatNumber(Math.round(currentValue));
-            }
-            
-            if (progress < 1) {
-                requestAnimationFrame(updateValue);
-            } else {
-                resolve();
-            }
-        }
-        
-        requestAnimationFrame(updateValue);
-    });
-}
-
-function fadeInElement(element, delay = 0) {
-    if (!element) return;
-    
-    setTimeout(() => {
-        element.style.opacity = '0';
-        element.style.transform = 'translateY(20px)';
-        element.style.transition = 'opacity 0.5s ease, transform 0.5s ease';
-        
-        // Trigger reflow
-        void element.offsetWidth;
-        
-        element.style.opacity = '1';
-        element.style.transform = 'translateY(0)';
-    }, delay);
-}
-
-// ==================== LOGOUT FUNCTIONALITY ====================
-function initLogout() {
-    const logoutBtn = document.getElementById('logoutBtn');
-    
-    if (logoutBtn) {
-        logoutBtn.addEventListener('click', handleLogout);
-        console.log('✅ Logout button event listener added');
-    }
-    
-    // Also look for any element with logout class
-    document.querySelectorAll('[onclick*="logout"], .logout-btn').forEach(element => {
-        if (!element.hasAttribute('data-logout-handled')) {
-            element.setAttribute('data-logout-handled', 'true');
-            element.addEventListener('click', function(e) {
-                e.preventDefault();
-                handleLogout();
-            });
-        }
-    });
-}
-
-async function handleLogout(e) {
-    if (e) e.preventDefault();
-    
-    console.log('🚪 Logout initiated...');
-    
-    // Show confirmation dialog
-    const confirmed = confirm('Are you sure you want to logout?');
-    if (!confirmed) return;
-    
-    // Show loading state
-    showLogoutLoading();
-    
-    try {
-        // Cleanup dashboard resources
-        cleanup();
-        
-        // Send logout request
-        const response = await fetch('/api/auth/logout', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'same-origin'
-        });
-        
-        if (response.ok) {
-            console.log('✅ Logout successful');
-            clearLocalData();
-            
-            // Redirect to login page
-            setTimeout(() => {
-                window.location.href = '/login';
-            }, 500);
-            
-        } else {
-            throw new Error('Logout request failed');
-        }
-        
-    } catch (error) {
-        console.error('❌ Logout error:', error);
-        tryFallbackLogout();
+// ==================== HELPER FUNCTIONS ====================
+function showLoading(show) {
+    const loadingOverlay = document.getElementById('dashboardLoading');
+    if (loadingOverlay) {
+        loadingOverlay.style.display = show ? 'flex' : 'none';
     }
 }
 
-function showLogoutLoading() {
-    const loadingOverlay = document.createElement('div');
-    loadingOverlay.id = 'logout-loading';
-    loadingOverlay.style.cssText = `
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        background: rgba(0, 0, 0, 0.8);
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        z-index: 99999;
-        color: white;
-        font-family: Arial, sans-serif;
-    `;
-    
-    loadingOverlay.innerHTML = `
-        <div class="spinner" style="
-            width: 50px;
-            height: 50px;
-            border: 5px solid rgba(255,255,255,0.3);
-            border-radius: 50%;
-            border-top-color: #fff;
-            animation: spin 1s ease-in-out infinite;
-            margin-bottom: 20px;
-        "></div>
-        <h3 style="margin: 0 0 10px 0; color: white;">Logging out...</h3>
-        <p style="opacity: 0.8; margin: 0; color: #ddd;">Please wait</p>
-    `;
-    
-    // Add spinner animation
-    const style = document.createElement('style');
-    style.textContent = `
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-    `;
-    document.head.appendChild(style);
-    
-    document.body.appendChild(loadingOverlay);
-}
-
-function clearLocalData() {
-    localStorage.clear();
-    sessionStorage.clear();
-    
-    // Clear cookies
-    document.cookie.split(";").forEach(function(c) {
-        document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
-    });
-    
-    console.log('🧹 Local data cleared');
-}
-
-function tryFallbackLogout() {
-    console.log('🔄 Trying fallback logout methods...');
-    
-    // Try direct redirect to logout endpoint
-    window.location.href = '/logout';
-    
-    // Fallback
-    setTimeout(() => {
-        window.location.href = '/login?logout=true';
-    }, 1000);
-}
-
-// ==================== REAL-TIME UPDATES ====================
-function initRealTimeUpdates() {
-    console.log('🚀 Initializing real-time updates...');
-    
-    setupSSEConnection();
-    
-    // Regular refresh every 30 seconds
-    setInterval(fetchDashboardStats, 30000);
-}
-
-function setupSSEConnection() {
-    console.log('📡 Setting up SSE connection...');
-    
-    if (eventSource) {
-        eventSource.close();
-        eventSource = null;
-    }
-    
-    eventSource = new EventSource('/api/admin/events', {
-        withCredentials: true
-    });
-    
-    eventSource.onopen = () => {
-        console.log('✅ Connected to real-time server');
-        isConnected = true;
-        reconnectAttempts = 0;
-    };
-    
-    eventSource.onmessage = (event) => {
-        console.log('📥 Received SSE message:', event.data);
-        try {
-            const data = JSON.parse(event.data);
-            handleSSEEvent(data);
-        } catch (error) {
-            console.error('❌ Error parsing SSE event:', error);
-        }
-    };
-    
-    eventSource.addEventListener('new_order', (event) => {
-        try {
-            const data = JSON.parse(event.data);
-            handleNewOrderEvent(data);
-        } catch (error) {
-            console.error('❌ Error processing new order event:', error);
-        }
-    });
-    
-    eventSource.addEventListener('stats_update', (event) => {
-        try {
-            const data = JSON.parse(event.data);
-            handleStatsUpdateEvent(data);
-        } catch (error) {
-            console.error('❌ Error processing stats update:', error);
-        }
-    });
-    
-    eventSource.onerror = (error) => {
-        console.error('❌ SSE connection error:', error);
-        isConnected = false;
-        
-        if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-            reconnectAttempts++;
-            const delay = Math.min(3000 * reconnectAttempts, 30000);
-            console.log(`🔄 Reconnecting in ${delay}ms (attempt ${reconnectAttempts})...`);
-            
-            setTimeout(() => {
-                setupSSEConnection();
-            }, delay);
-        } else {
-            console.error('❌ Max reconnection attempts reached.');
-        }
-    };
-}
-
-function handleSSEEvent(data) {
-    console.log('🎯 Handling SSE event:', data.type);
-    
-    switch (data.type) {
-        case 'connected':
-            console.log('✅ ' + (data.message || 'Connected to real-time updates'));
-            break;
-            
-        case 'new_order':
-            handleNewOrderEvent(data.data);
-            break;
-            
-        case 'stats_update':
-            handleStatsUpdateEvent(data.data);
-            break;
-            
-        default:
-            console.log('❓ Unknown event type:', data.type);
-    }
-}
-
-function handleNewOrderEvent(orderData) {
-    console.log('🆕 New order received:', orderData.orderNumber);
-    
-    // Show notification
-    showOrderNotification(orderData);
-    
-    // Add to orders array
-    allOrders.unshift(orderData);
-    
-    // Update tables
-    updateRecentOrdersTable();
-    
-    // Refresh stats
-    fetchDashboardStats();
-}
-
-function handleStatsUpdateEvent(statsData) {
-    console.log('📊 Stats update event received');
-    fetchDashboardStats();
-}
-
-// ==================== NOTIFICATION SYSTEM ====================
-function showOrderNotification(order) {
-    // Remove existing notification
-    const existing = document.querySelector('.order-notification');
-    if (existing) existing.remove();
-    
+function showNotification(message, type = 'info') {
+    // Create notification element
     const notification = document.createElement('div');
-    notification.className = 'order-notification';
+    notification.className = `notification notification-${type}`;
     notification.innerHTML = `
-        <div class="notification-header">
-            <strong>🆕 New Order!</strong>
-            <button onclick="this.parentElement.parentElement.remove()">×</button>
-        </div>
-        <div class="notification-body">
-            <p><strong>Order #:</strong> ${order.orderNumber || 'N/A'}</p>
-            <p><strong>Total:</strong> ${formatCurrency(order.total || 0)}</p>
-            <p><strong>Customer:</strong> ${order.customerName || 'Walk-in'}</p>
-            <p><small>${new Date().toLocaleTimeString()}</small></p>
+        <div class="notification-content">
+            <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : 'info-circle'}"></i>
+            <span>${message}</span>
         </div>
     `;
     
-    addNotificationStyles();
-    document.body.appendChild(notification);
-    
-    // Auto-remove after 8 seconds
-    setTimeout(() => {
-        if (notification.parentElement) {
-            notification.remove();
-        }
-    }, 8000);
-}
-
-function addNotificationStyles() {
+    // Add styles if not present
     if (!document.getElementById('notification-styles')) {
         const style = document.createElement('style');
         style.id = 'notification-styles';
         style.textContent = `
-            .order-notification {
+            .notification {
                 position: fixed;
                 top: 20px;
                 right: 20px;
-                background: white;
-                border-left: 4px solid #4CAF50;
+                padding: 15px 20px;
                 border-radius: 8px;
-                padding: 15px;
-                width: 300px;
-                box-shadow: 0 4px 20px rgba(0,0,0,0.15);
-                z-index: 10000;
-                animation: slideIn 0.3s ease-out;
-                font-family: Arial, sans-serif;
+                color: white;
+                font-weight: 500;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+                z-index: 1000;
+                animation: slideIn 0.3s ease, fadeOut 0.3s ease 2.7s forwards;
+                max-width: 300px;
+            }
+            
+            .notification-success {
+                background: linear-gradient(135deg, #4CAF50, #2E7D32);
+                border-left: 4px solid #2E7D32;
+            }
+            
+            .notification-error {
+                background: linear-gradient(135deg, #f44336, #c62828);
+                border-left: 4px solid #c62828;
+            }
+            
+            .notification-info {
+                background: linear-gradient(135deg, #2196F3, #1565C0);
+                border-left: 4px solid #1565C0;
+            }
+            
+            .notification-content {
+                display: flex;
+                align-items: center;
+                gap: 10px;
             }
             
             @keyframes slideIn {
-                from { transform: translateX(100%); opacity: 0; }
-                to { transform: translateX(0); opacity: 1; }
+                from {
+                    transform: translateX(100%);
+                    opacity: 0;
+                }
+                to {
+                    transform: translateX(0);
+                    opacity: 1;
+                }
             }
             
-            .notification-header {
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-                margin-bottom: 10px;
-                padding-bottom: 8px;
-                border-bottom: 1px solid #eee;
-            }
-            
-            .notification-header strong {
-                color: #333;
-                font-size: 16px;
-            }
-            
-            .notification-header button {
-                background: none;
-                border: none;
-                font-size: 20px;
-                cursor: pointer;
-                color: #999;
-                padding: 0;
-                width: 24px;
-                height: 24px;
-                border-radius: 4px;
-                transition: all 0.2s ease;
-            }
-           
-            
-            .notification-body p {
-                margin: 5px 0;
-                font-size: 14px;
-                line-height: 1.4;
-            }
-            
-            .notification-body strong {
-                color: #555;
-                font-weight: 600;
-                display: inline-block;
-                min-width: 70px;
-            }
-            
-            .notification-body small {
-                color: #888;
-                font-size: 12px;
+            @keyframes fadeOut {
+                from {
+                    opacity: 1;
+                }
+                to {
+                    opacity: 0;
+                }
             }
         `;
         document.head.appendChild(style);
     }
+    
+    // Add to body
+    document.body.appendChild(notification);
+    
+    // Remove after 3 seconds
+    setTimeout(() => {
+        if (notification.parentNode) {
+            notification.parentNode.removeChild(notification);
+        }
+    }, 3000);
 }
 
-// ==================== STYLES ====================
+function initRealTimeUpdates() {
+    // Check for updates every 30 seconds
+    const updateInterval = setInterval(() => {
+        console.log('Checking for data updates...');
+        fetchAllData();
+    }, 30000);
+    
+    // Store interval ID for cleanup
+    window.dashboardUpdateInterval = updateInterval;
+}
+
+function setupEventListeners() {
+    // Refresh button
+    const refreshBtn = document.getElementById('refreshDashboard');
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', () => {
+            refreshBtn.disabled = true;
+            refreshBtn.innerHTML = '<i class="fas fa-sync-alt fa-spin"></i> Refreshing...';
+            
+            fetchAllData().finally(() => {
+                setTimeout(() => {
+                    refreshBtn.disabled = false;
+                    refreshBtn.innerHTML = '<i class="fas fa-sync-alt"></i> Refresh';
+                }, 1000);
+            });
+        });
+    }
+    
+    // Manual refresh with Ctrl+R (but not when in input fields)
+    document.addEventListener('keydown', (e) => {
+        if (e.ctrlKey && e.key === 'r' && !e.target.matches('input, textarea, select')) {
+            e.preventDefault();
+            fetchAllData();
+        }
+    });
+    
+    // Auto-refresh when tab becomes visible
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) {
+            fetchAllData();
+        }
+    });
+}
+
+// ==================== DASHBOARD INITIALIZATION ====================
+function initializeDashboard() {
+    console.log('Initializing dashboard...');
+    
+    // Check if we're on a dashboard page
+    const isDashboardPage = window.location.pathname.includes('admindashboard') || 
+                           window.location.pathname.includes('dashboard') ||
+                           document.querySelector('.dashboard-container') ||
+                           document.querySelector('.dashboard-stats') ||
+                           document.querySelector('.stat-card');
+    
+    if (!isDashboardPage) {
+        console.log('Not on dashboard page, skipping initialization');
+        return;
+    }
+    
+    // Add dashboard styles
+    addDashboardStyles();
+    
+    // Initialize all stat values to 0
+    document.querySelectorAll('.stat-value').forEach(el => {
+        if (el.textContent.trim() === '' || el.textContent.trim() === '0') {
+            el.textContent = '0';
+            el.style.opacity = '0.7';
+        }
+    });
+    
+    // Setup event listeners
+    setupEventListeners();
+    
+    // Initial data load
+    fetchAllData();
+    
+    // Start periodic updates
+    setTimeout(() => {
+        initRealTimeUpdates();
+    }, 30000);
+    
+    console.log('Dashboard initialized successfully');
+}
+
 function addDashboardStyles() {
     if (!document.getElementById('dashboard-styles')) {
         const style = document.createElement('style');
         style.id = 'dashboard-styles';
         style.textContent = `
-            /* Card animations */
-            .card-animated {
-                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            /* Dashboard Styles */
+            .stat-card {
+                transition: all 0.3s ease;
+                position: relative;
+                overflow: hidden;
             }
-
             
-            /* Chart styles */
+            .stat-card:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 6px 16px rgba(0,0,0,0.1);
+            }
+            
+            .stat-card::before {
+                content: '';
+                position: absolute;
+                top: 0;
+                left: 0;
+                right: 0;
+                height: 3px;
+                background: linear-gradient(90deg, #4CAF50, #2196F3);
+            }
+            
+            .stat-value {
+                font-size: 2rem;
+                font-weight: bold;
+                transition: all 0.3s ease;
+            }
+            
+            .stat-value-updating {
+                animation: pulse 0.5s ease;
+            }
+            
+            @keyframes pulse {
+                0% { transform: scale(1); color: inherit; }
+                50% { transform: scale(1.05); color: #4CAF50; }
+                100% { transform: scale(1); color: inherit; }
+            }
+            
+            /* Chart Styles */
             .chart-container {
                 background: white;
                 border-radius: 12px;
@@ -1092,18 +909,9 @@ function addDashboardStyles() {
                 overflow: hidden;
             }
             
-            .chart-container::before {
-                content: '';
-                position: absolute;
-                top: 0;
-                left: 0;
-                right: 0;
-                height: 4px;
-                background: linear-gradient(90deg, #4CAF50, #8BC34A);
-            }
-            
             .chart-bar {
                 position: relative;
+                transition: all 0.3s ease;
             }
             
             .chart-amount-label {
@@ -1113,14 +921,15 @@ function addDashboardStyles() {
                 transform: translateX(-50%);
                 background: rgba(0, 0, 0, 0.8);
                 color: white;
-                padding: 2px 8px;
-                border-radius: 10px;
+                padding: 4px 10px;
+                border-radius: 12px;
                 font-size: 11px;
                 font-weight: bold;
                 white-space: nowrap;
                 opacity: 0;
                 transition: opacity 0.3s ease;
                 z-index: 10;
+                pointer-events: none;
             }
             
             .chart-day-label {
@@ -1134,15 +943,21 @@ function addDashboardStyles() {
                 white-space: nowrap;
             }
             
-            /* Status badges */
+            /* Status Badges */
             .status-badge {
                 display: inline-block;
-                padding: 4px 10px;
+                padding: 4px 12px;
                 border-radius: 20px;
                 font-size: 11px;
                 font-weight: bold;
                 text-align: center;
                 min-width: 80px;
+                transition: all 0.2s ease;
+            }
+            
+            .status-badge:hover {
+                transform: scale(1.05);
+                box-shadow: 0 3px 8px rgba(0,0,0,0.1);
             }
             
             .status-hot {
@@ -1159,11 +974,6 @@ function addDashboardStyles() {
                 background: #f5f5f5;
                 color: #666;
                 border: 1px solid #ddd;
-            }
-            
-            .status-new {
-                background: linear-gradient(135deg, #7b1fa2, #ba68c8);
-                color: white;
             }
             
             .status-in-stock {
@@ -1184,259 +994,92 @@ function addDashboardStyles() {
                 border: 1px solid #ffcdd2;
             }
             
-            /* Table styles */
-            table {
-                width: 100%;
-                border-collapse: collapse;
-                font-size: 14px;
+            /* Loading Overlay */
+            .loading-overlay {
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                background: rgba(255, 255, 255, 0.9);
+                display: none;
+                justify-content: center;
+                align-items: center;
+                z-index: 9999;
             }
             
-            th {
-                font-weight: 600;
-                text-align: left;
-                padding: 12px;
-                border-bottom: 2px solid #dee2e6;
-                background-color: #f8f9fa;
-                color: #495057;
+            .loading-spinner {
+                width: 50px;
+                height: 50px;
+                border: 3px solid #f3f3f3;
+                border-top: 3px solid #4CAF50;
+                border-radius: 50%;
+                animation: spin 1s linear infinite;
             }
             
-            td {
-                padding: 12px;
-                border-bottom: 1px solid #e9ecef;
-                vertical-align: middle;
-            }
-
-            /* Loading animation */
-            @keyframes fadeIn {
-                from { opacity: 0; transform: translateY(10px); }
-                to { opacity: 1; transform: translateY(0); }
+            @keyframes spin {
+                0% { transform: rotate(0deg); }
+                100% { transform: rotate(360deg); }
             }
             
-            .fade-in {
-                animation: fadeIn 0.5s ease forwards;
+            /* Table Animations */
+            table tbody tr {
+                transition: all 0.3s ease;
             }
             
-            /* Responsive */
-            @media (max-width: 768px) {
-                .chart-container {
-                    padding: 15px;
-                }
-                
-                .chart-bar {
-                    margin: 0 3px;
-                }
-                
-                .chart-amount-label {
-                    font-size: 10px;
-                    padding: 1px 6px;
-                }
-                
-                .chart-day-label {
-                    font-size: 11px;
-                }
-                
-                table {
-                    font-size: 13px;
-                }
-                
-                th, td {
-                    padding: 8px;
-                }
+            table tbody tr:hover {
+                background-color: #f5f5f5;
+                transform: translateX(5px);
             }
         `;
         document.head.appendChild(style);
     }
+    
+    // Add loading overlay if not present
+    if (!document.getElementById('dashboardLoading')) {
+        const loadingOverlay = document.createElement('div');
+        loadingOverlay.id = 'dashboardLoading';
+        loadingOverlay.className = 'loading-overlay';
+        loadingOverlay.innerHTML = '<div class="loading-spinner"></div>';
+        document.body.appendChild(loadingOverlay);
+    }
 }
 
-// ==================== EVENT HANDLERS ====================
-function setupEventListeners() {
-    // Refresh button
-    const refreshBtn = document.getElementById('refreshBtn');
-    if (refreshBtn) {
-        refreshBtn.addEventListener('click', function() {
-            // Add rotation animation
-            this.style.transition = 'transform 0.5s ease';
-            this.style.transform = 'rotate(360deg)';
-            
-            setTimeout(() => {
-                this.style.transform = '';
-            }, 500);
-            
-            fetchDashboardStats();
-        });
+// ==================== CLEANUP FUNCTION ====================
+function cleanupDashboard() {
+    if (window.dashboardUpdateInterval) {
+        clearInterval(window.dashboardUpdateInterval);
     }
     
-    // Search functionality
-    const searchInput = document.getElementById('orderSearch');
-    if (searchInput) {
-        searchInput.addEventListener('input', function(e) {
-            filterOrders(e.target.value);
-        });
-    }
-    
-    // Handle page visibility for auto-refresh
-    let refreshInterval;
-    
-    function setupAutoRefresh() {
-        clearInterval(refreshInterval);
-        
-        refreshInterval = setInterval(() => {
-            if (!document.hidden) {
-                fetchDashboardStats();
-            }
-        }, 60000);
-    }
-    
-    document.addEventListener('visibilitychange', function() {
-        if (!document.hidden) {
-            setupAutoRefresh();
-        } else {
-            clearInterval(refreshInterval);
-        }
-    });
-    
-    setupAutoRefresh();
-}
-
-function filterOrders(searchTerm) {
-    const term = searchTerm.toLowerCase().trim();
-    const tableBody = document.getElementById('ordersTableBody');
-    
-    if (!tableBody || !allOrders.length) return;
-    
-    if (!term) {
-        updateRecentOrdersTable();
-        return;
-    }
-    
-    // Filter orders
-    const filteredOrders = allOrders.filter(order => {
-        const orderNumber = (order.orderNumber || '').toLowerCase();
-        const customerName = (order.customerName || '').toLowerCase();
-        
-        return orderNumber.includes(term) || customerName.includes(term);
-    });
-    
-    // Update table with filtered results
-    if (filteredOrders.length === 0) {
-        tableBody.innerHTML = `
-            <tr>
-                <td colspan="4" style="text-align: center; padding: 20px; color: #666;">
-                    No orders found matching "${searchTerm}"
-                </td>
-            </tr>
-        `;
-        return;
-    }
-    
-    // Show filtered results
-    tableBody.innerHTML = '';
-    
-    filteredOrders.slice(0, 10).forEach((order, index) => {
-        const row = document.createElement('tr');
-        const orderTime = new Date(order.createdAt || Date.now());
-        const timeString = orderTime.toLocaleTimeString('en-US', { 
-            hour: '2-digit', 
-            minute: '2-digit',
-            hour12: true 
-        }).toLowerCase();
-        
-        const totalAmount = parseFloat(order.total || order.totalAmount || 0);
-        const customerName = order.customerName || order.customer || 'Walk-in Customer';
-        const orderNumber = order.orderNumber || `ORD-${(order._id || '0000').toString().substring(0, 8)}`;
-        
-        row.innerHTML = `
-            <td>${orderNumber}</td>
-            <td>${timeString}</td>
-            <td>${customerName}</td>
-            <td>${formatCurrency(totalAmount)}</td>
-        `;
-        
-        tableBody.appendChild(row);
-    });
-}
-
-// ==================== CLEANUP ====================
-function cleanup() {
     if (eventSource) {
         eventSource.close();
-        console.log('🔌 SSE connection closed');
-    }
-    
-    // Clear any intervals
-    const intervalId = window.setInterval(function(){}, 9999);
-    for (let i = 0; i < intervalId; i++) {
-        window.clearInterval(i);
     }
 }
-
-// ==================== INITIALIZATION ====================
-function initializeDashboard() {
-    console.log('📄 Dashboard page loaded');
-    
-    const isDashboardPage = window.location.pathname.includes('admindashboard') || 
-                           window.location.pathname.includes('dashboard') ||
-                           document.querySelector('.dashboard-container');
-    
-    if (!isDashboardPage) return;
-    
-    console.log('🏁 Starting dashboard initialization...');
-    
-    // Add styles
-    addDashboardStyles();
-    
-    // Initialize logout functionality
-    initLogout();
-    
-    // Add animation classes to cards
-    document.querySelectorAll('.card').forEach(card => {
-        card.classList.add('card-animated');
-    });
-    
-    // Setup event listeners
-    setupEventListeners();
-    
-    // Set initial values to 0
-    document.querySelectorAll('.stat-value').forEach(el => {
-        el.textContent = '0';
-    });
-    
-    // Load initial data
-    fetchDashboardStats();
-    
-    // Start real-time updates
-    setTimeout(() => {
-        initRealTimeUpdates();
-    }, 2000);
-    
-    console.log('✅ Dashboard initialized successfully - starting fresh with no data');
-}
-
-// ==================== GLOBAL EXPORTS ====================
-window.fixPesoSign = function() {
-    const revenueEl = document.getElementById('totalRevenue');
-    if (revenueEl && !revenueEl.textContent.includes('₱')) {
-        const current = revenueEl.textContent;
-        revenueEl.textContent = '₱' + current.replace(/[^\d.]/g, '');
-    }
-};
-
-window.refreshDashboard = function() {
-    fetchDashboardStats();
-};
-
-window.logoutDashboard = function() {
-    handleLogout();
-};
 
 // ==================== STARTUP ====================
+// Handle page load
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initializeDashboard);
 } else {
+    // If document is already loaded
     setTimeout(initializeDashboard, 100);
 }
 
-// Cleanup on page unload
-window.addEventListener('beforeunload', cleanup);
+// Handle page unload
+window.addEventListener('beforeunload', cleanupDashboard);
+window.addEventListener('unload', cleanupDashboard);
 
-console.log('✅ Dashboard script loaded - Starting fresh with no sample data');
+// Export functions for debugging
+window.dashboardDebug = {
+    fetchAllData,
+    calculateDashboardStats,
+    updateDashboardUI,
+    getStats: () => dashboardStats,
+    getData: () => ({
+        allOrders,
+        allMenuItems,
+        allInventory,
+        allCustomers,
+        topSellingProducts
+    })
+};
