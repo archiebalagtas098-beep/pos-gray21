@@ -1,3 +1,15 @@
+// ==================== GLOBAL VARIABLES ====================
+let allMenuItems = [];
+let notifications = [];
+let notificationCount = 0;
+let isNotificationModalOpen = false;
+let hasNewNotifications = false;
+let currentSection = 'dashboard';
+let currentCategory = 'all';
+let isModalOpen = false;
+let retryCount = 0;
+const MAX_RETRIES = 3;
+
 // Menu Database (as provided) - Keep this section exactly as is
 const menuDatabase = {
     'Rice': [
@@ -164,18 +176,6 @@ const unitDisplayLabels = {
     'bags': 'Bags'
 };
 
-// ==================== GLOBAL VARIABLES ====================
-let allMenuItems = [];
-let notifications = [];
-let notificationCount = 0;
-let isNotificationModalOpen = false;
-let hasNewNotifications = false;
-let currentSection = 'dashboard';
-let currentCategory = 'all';
-let isModalOpen = false;
-let retryCount = 0;
-const MAX_RETRIES = 3;
-
 // ==================== DOM ELEMENTS CACHE ====================
 const elements = {
     itemModal: document.getElementById('itemModal'),
@@ -226,7 +226,13 @@ document.addEventListener('DOMContentLoaded', function() {
     // Initialize event listeners
     initializeEventListeners();
     
-    // Load initial data
+    // Initialize categories dropdown
+    initializeCategoryDropdown();
+    
+    // Try to load from localStorage first
+    loadFromLocalStorage();
+    
+    // Then try to fetch from API
     fetchMenuItems();
     
     // Set up auto-refresh
@@ -234,6 +240,47 @@ document.addEventListener('DOMContentLoaded', function() {
     
     console.log('✅ System initialized');
 });
+
+// ==================== LOAD FROM LOCALSTORAGE ====================
+function loadFromLocalStorage() {
+    try {
+        const backup = localStorage.getItem('menuItems_backup');
+        if (backup) {
+            const parsedData = JSON.parse(backup);
+            allMenuItems = Array.isArray(parsedData) ? parsedData : [];
+            console.log('📦 Loaded from localStorage:', allMenuItems.length, 'items');
+            
+            // Update UI with localStorage data
+            updateAllUIComponents();
+            
+            const lastUpdate = localStorage.getItem('menuItems_lastUpdate');
+            if (lastUpdate) {
+                const updateTime = new Date(lastUpdate).toLocaleString();
+                console.log('📅 Last update from server:', updateTime);
+            }
+        } else {
+            console.log('📭 No localStorage backup found');
+            allMenuItems = []; // Start from 0
+        }
+    } catch (error) {
+        console.error('❌ Error loading from localStorage:', error);
+        allMenuItems = []; // Start from 0
+    }
+}
+
+// ==================== INITIALIZE CATEGORY DROPDOWN ====================
+function initializeCategoryDropdown() {
+    if (!elements.itemCategory) return;
+    
+    elements.itemCategory.innerHTML = '<option value="">Select Category</option>';
+    
+    Object.keys(categoryDisplayNames).forEach(category => {
+        const option = document.createElement('option');
+        option.value = category;
+        option.textContent = categoryDisplayNames[category];
+        elements.itemCategory.appendChild(option);
+    });
+}
 
 // ==================== NOTIFICATION SYSTEM ====================
 function addNotificationStyles() {
@@ -261,10 +308,7 @@ function addNotificationStyles() {
             50% { transform: scale(1.1); }
             100% { transform: scale(1); }
         }
-        
-        .notification-item:hover {
-            background-color: #f8f9fa !important;
-        }
+
     `;
     document.head.appendChild(style);
 }
@@ -524,9 +568,12 @@ function checkOutOfStockItems() {
 
 // ==================== EVENT LISTENERS ====================
 function initializeEventListeners() {
+    console.log('🔌 Initializing event listeners...');
+    
     // Add new item button
     if (elements.addNewItem) {
         elements.addNewItem.addEventListener('click', openAddModal);
+        console.log('✅ Add new item button listener added');
     }
     
     // Save item button
@@ -535,6 +582,7 @@ function initializeEventListeners() {
             e.preventDefault();
             await handleSaveItem();
         });
+        console.log('✅ Save item button listener added');
     }
     
     // Cancel and close modal buttons
@@ -549,11 +597,13 @@ function initializeEventListeners() {
     // Category change listener
     if (elements.itemCategory) {
         elements.itemCategory.addEventListener('change', updateFromCategory);
+        console.log('✅ Category change listener added');
     }
     
     // Product name change listener
     if (elements.itemName) {
         elements.itemName.addEventListener('change', updateFromItemNameSelect);
+        console.log('✅ Product name change listener added');
     }
     
     // Modal overlay click
@@ -574,23 +624,29 @@ function initializeEventListeners() {
     }
     
     // Navigation
-    elements.navLinks.forEach(link => {
-        link.addEventListener('click', (e) => {
-            e.preventDefault();
-            const section = link.getAttribute('data-section');
-            showSection(section);
+    if (elements.navLinks && elements.navLinks.length > 0) {
+        elements.navLinks.forEach(link => {
+            link.addEventListener('click', (e) => {
+                e.preventDefault();
+                const section = link.getAttribute('data-section');
+                showSection(section);
+            });
         });
-    });
+        console.log('✅ Navigation listeners added');
+    }
     
     // Category filter
-    elements.categoryItems.forEach(item => {
-        item.addEventListener('click', (e) => {
-            e.preventDefault();
-            const category = item.getAttribute('data-category');
-            const fullname = item.getAttribute('data-fullname');
-            filterByCategory(category, fullname);
+    if (elements.categoryItems && elements.categoryItems.length > 0) {
+        elements.categoryItems.forEach(item => {
+            item.addEventListener('click', (e) => {
+                e.preventDefault();
+                const category = item.getAttribute('data-category');
+                const fullname = item.getAttribute('data-fullname');
+                filterByCategory(category, fullname);
+            });
         });
-    });
+        console.log('✅ Category filter listeners added');
+    }
     
     // Send stock functionality
     if (elements.sendStockToStaffBtn) {
@@ -647,21 +703,10 @@ function initializeEventListeners() {
     const logoutBtn = document.getElementById('logoutBtn');
     if (logoutBtn) {
         logoutBtn.addEventListener('click', handleLogout);
+        console.log('✅ Logout listener added');
     }
     
-    // Initialize empty state if no data
-    if (allMenuItems.length === 0) {
-        setTimeout(() => {
-            if (elements.menuGrid && elements.menuGrid.children.length === 0) {
-                elements.menuGrid.innerHTML = `
-                    <div class="empty-state">
-                        <h3>No products found</h3>
-                        <p>Add products using the "Add New Product" button</p>
-                    </div>
-                `;
-            }
-        }, 100);
-    }
+    console.log('✅ All event listeners initialized');
 }
 
 // ==================== HELPER FUNCTIONS ====================
@@ -723,6 +768,8 @@ function populateItemNamesByCategory(category = null) {
         option.dataset.price = item.defaultPrice;
         itemNameSelect.appendChild(option);
     });
+    
+    console.log(`📋 Populated ${sortedItems.length} items for category: ${category}`);
 }
 
 function updateFromItemNameSelect() {
@@ -913,10 +960,10 @@ async function deleteMenuItem(itemId) {
     }
 }
 
-// ==================== FETCH FUNCTION ====================
+// ==================== UPDATED FETCH FUNCTION ====================
 async function fetchMenuItems() {
     try {
-        console.log('🔍 Fetching menu items...');
+        console.log('🔍 Fetching menu items from API...');
         
         const response = await fetch('/api/menu', {
             method: 'GET',
@@ -927,47 +974,23 @@ async function fetchMenuItems() {
             credentials: 'include'
         });
         
-        console.log('📡 Response status:', response.status, response.statusText);
+        console.log('📡 API Response status:', response.status);
         
         if (response.status === 401) {
-            console.error('🔐 Unauthorized - User not authenticated');
-            showToast('Session expired. Please login again.', 'error');
-            
-            // Redirect to login after 2 seconds
-            setTimeout(() => {
-                window.location.href = '/menu';
-            }, 2000);
+            console.warn('⚠️ Unauthorized - using localStorage data only');
             return;
         }
         
         if (!response.ok) {
-            const errorText = await response.text();
-            console.error('❌ Server error:', response.status, errorText);
-            
-            // Try to load from localStorage as backup
-            try {
-                const backup = localStorage.getItem('menuItems_backup');
-                if (backup) {
-                    allMenuItems = JSON.parse(backup);
-                    console.log('✅ Menu items loaded from localStorage backup:', allMenuItems.length);
-                    updateAllUIComponents();
-                    showToast('Using offline data. Some features may be limited.', 'warning');
-                } else {
-                    throw new Error(`Server responded with ${response.status}: ${errorText.substring(0, 100)}`);
-                }
-            } catch (e) {
-                console.error('Failed to load from localStorage:', e);
-                throw new Error(`Server responded with ${response.status}`);
-            }
+            console.warn(`⚠️ API error ${response.status} - using localStorage data`);
             return;
         }
         
         // Check if response is JSON
         const contentType = response.headers.get('content-type');
         if (!contentType || !contentType.includes('application/json')) {
-            const text = await response.text();
-            console.error('❌ Response is not JSON:', text.substring(0, 200));
-            throw new Error('Server returned non-JSON response');
+            console.warn('⚠️ Response is not JSON');
+            return;
         }
         
         const data = await response.json();
@@ -975,18 +998,15 @@ async function fetchMenuItems() {
         
         if (data.success) {
             allMenuItems = data.data || [];
-            console.log('✅ Menu items loaded from API:', allMenuItems.length);
+            console.log(`✅ ${allMenuItems.length} items loaded from API`);
             
-            // Backup to localStorage
-            try {
-                localStorage.setItem('menuItems_backup', JSON.stringify(allMenuItems));
-            } catch (e) {
-                console.warn('Could not save to localStorage:', e);
-            }
+            // Save to localStorage
+            saveToLocalStorage();
             
             // Update all UI components
             updateAllUIComponents();
-            retryCount = 0; // Reset retry count on success
+            
+            retryCount = 0; // Reset retry count
             
         } else {
             console.error('❌ API returned error:', data.message);
@@ -995,27 +1015,44 @@ async function fetchMenuItems() {
         
     } catch (error) {
         console.error('❌ Error fetching menu items:', error);
-        showToast('Failed to load menu items. Please check your connection.', 'error');
         
         if (retryCount < MAX_RETRIES) {
             retryCount++;
             console.log(`🔄 Retrying fetch (${retryCount}/${MAX_RETRIES})...`);
-            setTimeout(fetchMenuItems, 2000 * retryCount); // Exponential backoff
+            setTimeout(fetchMenuItems, 2000 * retryCount);
         }
+    }
+}
+
+function saveToLocalStorage() {
+    try {
+        localStorage.setItem('menuItems_backup', JSON.stringify(allMenuItems));
+        localStorage.setItem('menuItems_lastUpdate', new Date().toISOString());
+        console.log('💾 Saved to localStorage');
+    } catch (error) {
+        console.warn('⚠️ Could not save to localStorage:', error);
     }
 }
 
 // ==================== CORE FUNCTIONS ====================
 function updateDashboardStats() {
-    const totalMenuItems = allMenuItems.length;  // Finished products count
+    if (!allMenuItems || !Array.isArray(allMenuItems)) {
+        console.warn('⚠️ allMenuItems is not an array or is empty');
+        return;
+    }
     
-    const lowStockItems = allMenuItems.filter(item => 
-        item.currentStock <= item.minStock && item.currentStock > 0
-    ).length;
+    const totalMenuItems = allMenuItems.length;
     
-    const outOfStockItems = allMenuItems.filter(item => 
-        item.currentStock === 0
-    ).length;
+    const lowStockItems = allMenuItems.filter(item => {
+        const currentStock = item.currentStock || 0;
+        const minStock = item.minStock || 0;
+        return currentStock > 0 && currentStock <= minStock;
+    }).length;
+    
+    const outOfStockItems = allMenuItems.filter(item => {
+        const currentStock = item.currentStock || 0;
+        return currentStock === 0;
+    }).length;
     
     const menuValueTotal = allMenuItems.reduce((total, item) => {
         const price = item.price || 0;
@@ -1053,29 +1090,36 @@ function showSection(section) {
         targetSection.classList.add('active-section');
     }
     
-    elements.navLinks.forEach(link => {
-        link.classList.remove('active');
-        if (link.getAttribute('data-section') === section) {
-            link.classList.add('active');
-        }
-    });
+    if (elements.navLinks && elements.navLinks.length > 0) {
+        elements.navLinks.forEach(link => {
+            link.classList.remove('active');
+            if (link.getAttribute('data-section') === section) {
+                link.classList.add('active');
+            }
+        });
+    }
     
     currentSection = section;
     
     if (section === 'dashboard') {
         updateDashboardStats();
+        renderDashboardGrid();
+    } else if (section === 'menu') {
+        renderMenuGrid();
     }
 }
 
 function filterByCategory(category, fullname) {
     currentCategory = category;
     
-    elements.categoryItems.forEach(item => {
-        item.classList.remove('active');
-        if (item.getAttribute('data-category') === category) {
-            item.classList.add('active');
-        }
-    });
+    if (elements.categoryItems && elements.categoryItems.length > 0) {
+        elements.categoryItems.forEach(item => {
+            item.classList.remove('active');
+            if (item.getAttribute('data-category') === category) {
+                item.classList.add('active');
+            }
+        });
+    }
     
     if (elements.currentCategoryTitle) {
         elements.currentCategoryTitle.textContent = fullname || 'Product Menu';
@@ -1086,16 +1130,19 @@ function filterByCategory(category, fullname) {
     }
 }
 
+// ==================== RENDER MENU GRID ====================
 function renderMenuGrid() {
-    if (!elements.menuGrid) return;
+    console.log('🎨 Rendering menu grid...');
+    console.log('📊 Current category:', currentCategory);
+    console.log('📦 Total items in allMenuItems:', allMenuItems ? allMenuItems.length : 0);
     
-    let filteredItems = allMenuItems;
-    
-    if (currentCategory !== 'all') {
-        filteredItems = allMenuItems.filter(item => item.category === currentCategory);
+    if (!elements.menuGrid) {
+        console.error('❌ menuGrid element not found');
+        return;
     }
     
-    if (filteredItems.length === 0) {
+    if (!allMenuItems || !Array.isArray(allMenuItems) || allMenuItems.length === 0) {
+        console.log('📭 No items to display');
         elements.menuGrid.innerHTML = `
             <div class="empty-state">
                 <h3>No products found</h3>
@@ -1105,22 +1152,49 @@ function renderMenuGrid() {
         return;
     }
     
+    let filteredItems = [...allMenuItems];
+    
+    if (currentCategory !== 'all') {
+        filteredItems = allMenuItems.filter(item => item.category === currentCategory);
+        console.log(`🔍 Filtered items for ${currentCategory}:`, filteredItems.length);
+    }
+    
+    if (filteredItems.length === 0) {
+        console.log('📭 No items to display for this category');
+        elements.menuGrid.innerHTML = `
+            <div class="empty-state">
+                <h3>No products in this category</h3>
+                <p>Add products to this category using the "Add New Product" button</p>
+            </div>
+        `;
+        return;
+    }
+    
+    console.log(`🎯 Rendering ${filteredItems.length} items`);
+    
     const gridHTML = filteredItems.map(item => {
+        const itemName = item.name || item.itemName || 'Unnamed Product';
         const itemPrice = item.price || 0;
-        const itemValue = itemPrice * (item.currentStock || 0);
-        const stockPercentage = item.maxStock > 0 ? ((item.currentStock / item.maxStock) * 100) : 0;
+        const currentStock = item.currentStock || 0;
+        const maxStock = item.maxStock || 0;
+        const minStock = item.minStock || 0;
+        const unit = item.unit || '';
+        const displayUnit = unitDisplayLabels[unit] || unit;
+        
+        const itemValue = itemPrice * currentStock;
+        const stockPercentage = maxStock > 0 ? ((currentStock / maxStock) * 100) : 0;
         
         let stockClass = '';
-        if (item.currentStock === 0) {
+        if (currentStock === 0) {
             stockClass = 'out-of-stock';
-        } else if (item.currentStock <= item.minStock) {
+        } else if (currentStock <= minStock) {
             stockClass = 'low-stock';
         }
         
         return `
         <div class="menu-card ${stockClass}">
             <div class="card-header">
-                <h4>${item.name || item.itemName}</h4>
+                <h4>${itemName}</h4>
                 <div class="card-actions">
                     <button class="btn-icon" onclick="openEditModal('${item._id}')">Edit</button>
                     <button class="btn-icon delete" onclick="deleteMenuItem('${item._id}')">Delete</button>
@@ -1131,7 +1205,7 @@ function renderMenuGrid() {
                     <span class="label">Category:</span> ${getCategoryDisplayName(item.category)}
                 </div>
                 <div class="card-info">
-                    <span class="label">Current Stock:</span> ${item.currentStock} ${unitDisplayLabels[item.unit] || item.unit || ''}
+                    <span class="label">Current Stock:</span> ${currentStock} ${displayUnit}
                 </div>
                 <div class="card-info">
                     <span class="label">Selling Price:</span> ₱${itemPrice.toFixed(2)}
@@ -1140,10 +1214,10 @@ function renderMenuGrid() {
                     <span class="label">Stock Value:</span> ₱${itemValue.toFixed(2)}
                 </div>
                 <div class="card-info">
-                    <span class="label">Min Stock:</span> ${item.minStock} ${unitDisplayLabels[item.unit] || item.unit || ''}
+                    <span class="label">Min Stock:</span> ${minStock} ${displayUnit}
                 </div>
                 <div class="card-info">
-                    <span class="label">Max Stock:</span> ${item.maxStock || 0} ${unitDisplayLabels[item.unit] || item.unit || ''}
+                    <span class="label">Max Stock:</span> ${maxStock} ${displayUnit}
                 </div>
                 <div class="card-info">
                     <span class="label">Stock Level:</span>
@@ -1153,8 +1227,8 @@ function renderMenuGrid() {
                 </div>
                 <div class="card-info">
                     <span class="label">Status:</span>
-                    <span class="status ${item.currentStock === 0 ? 'out-of-stock' : item.currentStock <= item.minStock ? 'low-stock' : 'in-stock'}">
-                        ${item.currentStock === 0 ? 'Out of Stock' : item.currentStock <= item.minStock ? 'Low Stock' : 'In Stock'}
+                    <span class="status ${currentStock === 0 ? 'out-of-stock' : currentStock <= minStock ? 'low-stock' : 'in-stock'}">
+                        ${currentStock === 0 ? 'Out of Stock' : currentStock <= minStock ? 'Low Stock' : 'In Stock'}
                     </span>
                 </div>
             </div>
@@ -1168,7 +1242,22 @@ function renderMenuGrid() {
 function renderDashboardGrid() {
     if (!elements.dashboardGrid) return;
     
-    const lowStockItems = allMenuItems.filter(item => item.currentStock <= item.minStock);
+    if (!allMenuItems || !Array.isArray(allMenuItems) || allMenuItems.length === 0) {
+        elements.dashboardGrid.innerHTML = `
+            <div class="empty-state">
+                <h3>No products available</h3>
+                <p>Add products to see dashboard data</p>
+            </div>
+        `;
+        return;
+    }
+    
+    const lowStockItems = allMenuItems.filter(item => {
+        const currentStock = item.currentStock || 0;
+        const minStock = item.minStock || 0;
+        return currentStock <= minStock;
+    });
+    
     const recentItems = lowStockItems.slice(0, 8);
     
     if (recentItems.length === 0) {
@@ -1182,28 +1271,35 @@ function renderDashboardGrid() {
     }
     
     const gridHTML = recentItems.map(item => {
+        const itemName = item.name || item.itemName || 'Unnamed Product';
         const itemPrice = item.price || 0;
-        const itemValue = itemPrice * (item.currentStock || 0);
+        const currentStock = item.currentStock || 0;
+        const maxStock = item.maxStock || 0;
+        const minStock = item.minStock || 0;
+        const unit = item.unit || '';
+        const displayUnit = unitDisplayLabels[unit] || unit;
+        
+        const itemValue = itemPrice * currentStock;
         
         return `
-        <div class="menu-card ${item.currentStock === 0 ? 'out-of-stock' : 'low-stock'}">
+        <div class="menu-card ${currentStock === 0 ? 'out-of-stock' : 'low-stock'}">
             <div class="card-header">
-                <h4>${item.name || item.itemName}</h4>
+                <h4>${itemName}</h4>
             </div>
             <div class="card-body">
                 <div class="card-info">
-                    <span class="label">Stock:</span> ${item.currentStock}/${item.maxStock || 0} ${unitDisplayLabels[item.unit] || item.unit || ''}
+                    <span class="label">Stock:</span> ${currentStock}/${maxStock} ${displayUnit}
                 </div>
                 <div class="card-info">
                     <span class="label">Value:</span> ₱${itemValue.toFixed(2)}
                 </div>
                 <div class="card-info">
-                    <span class="label">Min:</span> ${item.minStock} ${unitDisplayLabels[item.unit] || item.unit || ''}
+                    <span class="label">Min:</span> ${minStock} ${displayUnit}
                 </div>
                 <div class="card-info">
                     <span class="label">Status:</span>
-                    <span class="status ${item.currentStock === 0 ? 'out-of-stock' : 'low-stock'}">
-                        ${item.currentStock === 0 ? 'Out of Stock' : 'Low Stock'}
+                    <span class="status ${currentStock === 0 ? 'out-of-stock' : 'low-stock'}">
+                        ${currentStock === 0 ? 'Out of Stock' : 'Low Stock'}
                     </span>
                 </div>
             </div>
@@ -1214,29 +1310,51 @@ function renderDashboardGrid() {
     elements.dashboardGrid.innerHTML = gridHTML;
 }
 
+// ==================== UPDATED CATEGORY COUNTS FUNCTION ====================
 function updateCategoryCounts() {
+    console.log('📊 Updating category counts...');
+    console.log('📦 Total items:', allMenuItems ? allMenuItems.length : 0);
+    
+    if (!allMenuItems || !Array.isArray(allMenuItems)) {
+        console.warn('⚠️ allMenuItems is not an array or is empty');
+        return;
+    }
+    
+    // Calculate counts for each category
     const categories = {
-        all: allMenuItems.length,
-        Rice: allMenuItems.filter(item => item.category === 'Rice').length,
-        Sizzling: allMenuItems.filter(item => item.category === 'Sizzling').length,
-        Party: allMenuItems.filter(item => item.category === 'Party').length,
-        Drink: allMenuItems.filter(item => item.category === 'Drink').length,
-        Cafe: allMenuItems.filter(item => item.category === 'Cafe').length,
-        Milk: allMenuItems.filter(item => item.category === 'Milk').length,
-        Frappe: allMenuItems.filter(item => item.category === 'Frappe').length,
+        'all': allMenuItems.length,
+        'Rice': allMenuItems.filter(item => item.category === 'Rice').length,
+        'Sizzling': allMenuItems.filter(item => item.category === 'Sizzling').length,
+        'Party': allMenuItems.filter(item => item.category === 'Party').length,
+        'Drink': allMenuItems.filter(item => item.category === 'Drink').length,
+        'Cafe': allMenuItems.filter(item => item.category === 'Cafe').length,
+        'Milk': allMenuItems.filter(item => item.category === 'Milk').length,
+        'Frappe': allMenuItems.filter(item => item.category === 'Frappe').length,
         'Snack & Appetizer': allMenuItems.filter(item => item.category === 'Snack & Appetizer').length,
         'Budget Meals Served with Rice': allMenuItems.filter(item => item.category === 'Budget Meals Served with Rice').length,
-        Specialties: allMenuItems.filter(item => item.category === 'Specialties').length,
-        packaging: allMenuItems.filter(item => item.category === 'packaging').length
+        'Specialties': allMenuItems.filter(item => item.category === 'Specialties').length,
+        'packaging': allMenuItems.filter(item => item.category === 'packaging').length
     };
     
-    elements.categoryItems.forEach(item => {
-        const category = item.getAttribute('data-category');
-        const countElement = item.querySelector('.category-count');
-        if (countElement && categories[category] !== undefined) {
-            countElement.textContent = categories[category];
-        }
-    });
+    console.log('📈 Calculated category counts:', categories);
+    
+    // Update each category item
+    if (elements.categoryItems && elements.categoryItems.length > 0) {
+        elements.categoryItems.forEach(item => {
+            const category = item.getAttribute('data-category');
+            const countElement = item.querySelector('.category-count');
+            
+            if (countElement) {
+                const count = categories[category] || 0;
+                countElement.textContent = count;
+                console.log(`✅ Updated ${category}: ${count}`);
+            } else {
+                console.warn(`⚠️ No count element found for category: ${category}`);
+            }
+        });
+    } else {
+        console.warn('⚠️ No category items found in DOM');
+    }
 }
 
 // ==================== MODAL FUNCTIONS ====================
@@ -1349,26 +1467,7 @@ async function handleSaveItem() {
         price: elements.itemPrice ? elements.itemPrice.value : '0'
     };
     
-    console.log('📝 Raw form values:');
-    console.log('- itemName element:', elements.itemName);
-    console.log('- itemName value:', formData.itemName);
-    console.log('- itemName selected option:', elements.itemName ? elements.itemName.options[elements.itemName.selectedIndex] : 'N/A');
-    console.log('- category value:', formData.category);
-    console.log('- unit value:', formData.unit);
-    console.log('- price value:', formData.price);
-    
-    // Check if dropdowns have valid selections
-    if (elements.itemName) {
-        const selectedOption = elements.itemName.options[elements.itemName.selectedIndex];
-        console.log('Selected option details:', selectedOption);
-        if (selectedOption) {
-            console.log('Option text:', selectedOption.text);
-            console.log('Option value:', selectedOption.value);
-            console.log('Option dataset:', selectedOption.dataset);
-        }
-    }
-    
-    // Validate required fields with more detailed messages
+    // Validate required fields
     if (!formData.itemName || formData.itemName.trim() === '' || formData.itemName === 'Select Product') {
         showToast('Please select a product from the dropdown list', 'error');
         if (elements.itemName) elements.itemName.focus();
@@ -1399,6 +1498,18 @@ async function handleSaveItem() {
     const minStock = parseInt(formData.minStock);
     const currentStock = parseInt(formData.currentStock);
     
+    if (isNaN(maxStock) || maxStock <= 0) {
+        showToast('Maximum stock must be a positive number', 'error');
+        if (elements.maximumStock) elements.maximumStock.focus();
+        return;
+    }
+    
+    if (isNaN(minStock) || minStock < 0) {
+        showToast('Minimum stock must be 0 or greater', 'error');
+        if (elements.minimumStock) elements.minimumStock.focus();
+        return;
+    }
+    
     if (maxStock <= minStock) {
         showToast('Maximum stock must be greater than minimum stock', 'error');
         if (elements.maximumStock) elements.maximumStock.focus();
@@ -1411,40 +1522,13 @@ async function handleSaveItem() {
         return;
     }
     
-    console.log('✅ Form validation passed, calling saveMenuItem');
+    if (currentStock < 0) {
+        showToast('Current stock cannot be negative', 'error');
+        if (elements.currentStock) elements.currentStock.focus();
+        return;
+    }
+    
     await saveMenuItem(formData);
-}
-
-function validateFormBeforeSave() {
-    const requiredFields = [
-        { element: elements.itemName, name: 'Product Name' },
-        { element: elements.itemCategory, name: 'Category' },
-        { element: elements.itemUnit, name: 'Unit' },
-        { element: elements.itemPrice, name: 'Price' }
-    ];
-    
-    const missingFields = [];
-    
-    requiredFields.forEach(field => {
-        if (!field.element || !field.element.value || field.element.value.trim() === '') {
-            missingFields.push(field.name);
-        }
-    });
-    
-    if (missingFields.length > 0) {
-        showToast(`Please fill in: ${missingFields.join(', ')}`, 'error');
-        return false;
-    }
-    
-    // Additional validation for price
-    const price = parseFloat(elements.itemPrice.value);
-    if (isNaN(price) || price <= 0) {
-        showToast('Please enter a valid price (greater than 0)', 'error');
-        elements.itemPrice.focus();
-        return false;
-    }
-    
-    return true;
 }
 
 async function saveMenuItem(itemData) {
@@ -1457,56 +1541,28 @@ async function saveMenuItem(itemData) {
     saveBtn.disabled = true;
     
     try {
-        console.log('📤 Sending itemData:', itemData);
-        
-        // Create payload ensuring all required fields exist
-         const payload = {
-        name: itemData.itemName, 
-        category: itemData.category,
-        unit: itemData.unit,
-        currentStock: Number(itemData.currentStock),
-        minStock: Number(itemData.minStock),
-        maxStock: Number(itemData.maxStock),
-        price: Number(itemData.price),
-        itemType: 'finished',
-        isActive: true
-    };
-        
-        console.log('📦 Final payload being sent:', JSON.stringify(payload, null, 2));
-        
-        // Log each field individually
-        console.log('🔍 Field values:');
-        console.log('- name:', payload.name, 'type:', typeof payload.name);
-        console.log('- category:', payload.category, 'type:', typeof payload.category);
-        console.log('- price:', payload.price, 'type:', typeof payload.price);
-        console.log('- unit:', payload.unit);
-        
-        // Validate required fields
-        if (!payload.name || payload.name === '') {
-            throw new Error('Product name is required');
-        }
-        
-        if (!payload.category || payload.category === '') {
-            throw new Error('Category is required');
-        }
-        
-        if (!payload.price || payload.price <= 0 || isNaN(payload.price)) {
-            throw new Error('Valid price is required');
-        }
+        // Create payload
+        const payload = {
+            name: itemData.itemName,
+            category: itemData.category,
+            unit: itemData.unit,
+            currentStock: Number(itemData.currentStock),
+            minStock: Number(itemData.minStock),
+            maxStock: Number(itemData.maxStock),
+            price: Number(itemData.price),
+            itemType: 'finished',
+            isActive: true
+        };
         
         let url, method;
         
         if (isEdit) {
             url = `/api/menu/${itemData.itemId}`;
             method = 'PUT';
-            console.log(`🔄 Editing item ${itemData.itemId}`);
         } else {
             url = '/api/menu';
             method = 'POST';
-            console.log('🆕 Adding new item');
         }
-        
-        console.log(`📤 Making ${method} request to: ${url}`);
         
         const response = await fetch(url, {
             method: method,
@@ -1518,27 +1574,20 @@ async function saveMenuItem(itemData) {
             credentials: 'include'
         });
         
-        console.log('📡 Save response status:', response.status);
-        
         if (response.status === 401) {
             throw new Error('Session expired. Please login again.');
         }
         
-        // Log the raw response text
         const responseText = await response.text();
-        console.log('📄 Raw response:', responseText);
-        
         let responseData;
+        
         try {
             responseData = JSON.parse(responseText);
-            console.log('📊 Parsed response:', responseData);
         } catch (e) {
-            console.error('❌ Failed to parse response as JSON:', e);
             throw new Error(`Invalid response from server: ${responseText.substring(0, 100)}`);
         }
         
         if (!response.ok) {
-            console.error('❌ Server error details:', responseData);
             throw new Error(`Server error: ${response.status} - ${responseData.message || 'Unknown error'}`);
         }
         
@@ -1558,7 +1607,6 @@ async function saveMenuItem(itemData) {
         
     } catch (error) {
         console.error('❌ Error saving product:', error);
-        console.error('❌ Error stack:', error.stack);
         showToast(`Error: ${error.message}`, 'error');
     } finally {
         saveBtn.textContent = originalText;
@@ -1568,7 +1616,7 @@ async function saveMenuItem(itemData) {
 
 // ==================== STOCK TRANSFER FUNCTIONS ====================
 function openSendStockModal() {
-    if (allMenuItems.length === 0) {
+    if (!allMenuItems || allMenuItems.length === 0) {
         showToast('No products available to transfer', 'error');
         return;
     }
@@ -1607,6 +1655,10 @@ function populateStockTransferProducts() {
     
     elements.stockProduct.innerHTML = '<option value="">Select Product to Transfer</option>';
     
+    if (!allMenuItems || !Array.isArray(allMenuItems)) {
+        return;
+    }
+    
     allMenuItems.forEach(item => {
         if (item.currentStock > 0) {
             const option = document.createElement('option');
@@ -1626,6 +1678,24 @@ function updateStockTransferSummary() {
     const productId = elements.stockProduct.value;
     const quantity = parseInt(elements.stockQuantity.value) || 0;
     const date = elements.transferDate.value;
+    
+    if (!productId) {
+        if (elements.availableStock) {
+            elements.availableStock.textContent = '0';
+        }
+        
+        const summaryProduct = document.getElementById('summaryProduct');
+        const summaryQuantity = document.getElementById('summaryQuantity');
+        const summaryDate = document.getElementById('summaryDate');
+        const summaryValue = document.getElementById('summaryValue');
+        
+        if (summaryProduct) summaryProduct.textContent = 'Not selected';
+        if (summaryQuantity) summaryQuantity.textContent = '0';
+        if (summaryDate) summaryDate.textContent = date || 'Not selected';
+        if (summaryValue) summaryValue.textContent = formatCurrency(0);
+        
+        return;
+    }
     
     const productOption = elements.stockProduct.options[elements.stockProduct.selectedIndex];
     const availableStock = parseInt(productOption.dataset.stock) || 0;
@@ -1654,7 +1724,8 @@ function updateStockTransferSummary() {
     }
     
     if (summaryQuantity) {
-        summaryQuantity.textContent = quantity > 0 ? `${quantity} ${displayUnit}` : '0';
+        const actualQuantity = quantity > availableStock ? availableStock : quantity;
+        summaryQuantity.textContent = actualQuantity > 0 ? `${actualQuantity} ${displayUnit}` : '0';
     }
     
     if (summaryDate) {
@@ -1662,7 +1733,8 @@ function updateStockTransferSummary() {
     }
     
     if (summaryValue && productOption.dataset.price) {
-        const totalValue = quantity * parseFloat(productOption.dataset.price);
+        const actualQuantity = quantity > availableStock ? availableStock : quantity;
+        const totalValue = actualQuantity * parseFloat(productOption.dataset.price);
         summaryValue.textContent = formatCurrency(totalValue);
     }
 }
@@ -1796,7 +1868,6 @@ async function logStockTransfer(transferData) {
         return false;
     } catch (error) {
         console.error('Error logging stock transfer:', error);
-        // Continue even if logging fails - main stock update was successful
         return false;
     }
 }
@@ -1823,11 +1894,20 @@ function handleLogout() {
 
 // ==================== UPDATE ALL UI COMPONENTS ====================
 function updateAllUIComponents() {
-    renderMenuGrid();
-    renderDashboardGrid();
+    console.log('🔄 Updating all UI components...');
+    console.log('📊 Current section:', currentSection);
+    
+    // Update based on current section
+    if (currentSection === 'dashboard') {
+        renderDashboardGrid();
+        updateDashboardStats();
+    } else if (currentSection === 'menu') {
+        renderMenuGrid();
+    }
+    
     updateCategoryCounts();
-    updateDashboardStats();
     populateStockTransferProducts();
+    console.log('✅ All UI components updated');
 }
 
 // ==================== GLOBAL EXPORTS ====================

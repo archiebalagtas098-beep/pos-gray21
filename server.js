@@ -2315,7 +2315,8 @@ app.get("/api/dashboard/stats", verifyToken, verifyAdmin, async (req, res) => {
         });
         
         const totalCustomers = await Customer.countDocuments();
-        const totalProducts = await totalProducts.countDocuments({ itemType: 'raw' });
+        const totalProducts = await InventoryItem.countDocuments({ itemType: 'raw' }); // FIXED: Changed from totalProducts.countDocuments to InventoryItem.countDocuments
+        
         const totalRevenueResult = await Order.aggregate([
             { $group: { _id: null, total: { $sum: "$total" } } }
         ]);
@@ -2362,7 +2363,7 @@ app.get("/api/dashboard/stats", verifyToken, verifyAdmin, async (req, res) => {
                 totalCustomers,
                 totalRevenue,
                 todaysRevenue,
-                totalProducts,
+                totalProducts, // This is now properly defined
                 inventoryLowStock,
                 inventoryOutOfStock
             }
@@ -2631,7 +2632,7 @@ app.get("/admindashboard", verifyToken, verifyAdmin, async (req, res) => {
         });
         const totalCustomers = await Customer.countDocuments();
         
-        const totalProducts = await totalProducts.countDocuments({ itemType: 'raw' });
+        const totalProducts = await InventoryItem.countDocuments({ itemType: 'raw' }); // FIXED
         const inventoryLowStock = await InventoryItem.countDocuments({
             itemType: 'raw',
             $expr: {
@@ -2656,7 +2657,7 @@ app.get("/admindashboard", verifyToken, verifyAdmin, async (req, res) => {
                 totalMenuItems,
                 availableMenuItems,
                 totalCustomers,
-                totalProducts,
+                totalProducts, // This is now properly defined
                 inventoryLowStock,
                 inventoryOutOfStock
             } 
@@ -2692,6 +2693,8 @@ app.get("/admindashboard/dashboard", verifyToken, verifyAdmin, async (req, res) 
             { $group: { _id: null, total: { $sum: "$total" } } }
         ]);
         const totalRevenue = totalRevenueResult[0]?.total || 0;
+        
+        const totalProducts = await InventoryItem.countDocuments({ itemType: 'raw' }); // FIXED
 
         const inventoryLowStock = await InventoryItem.countDocuments({
             itemType: 'raw',
@@ -2717,7 +2720,7 @@ app.get("/admindashboard/dashboard", verifyToken, verifyAdmin, async (req, res) 
                 totalMenuItems,
                 availableMenuItems,
                 totalCustomers,
-                totalProducts,
+                totalProducts, 
                 totalRevenue,
                 inventoryLowStock,
                 inventoryOutOfStock
@@ -2725,7 +2728,6 @@ app.get("/admindashboard/dashboard", verifyToken, verifyAdmin, async (req, res) 
         });
     } catch (error) {
         console.error('Error loading dashboard:', error);
-        // Render with default stats if there's an error
         res.render("dashboard", {
             user: req.user,
             stats: {

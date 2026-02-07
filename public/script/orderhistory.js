@@ -1,1384 +1,3170 @@
-// ==================== DASHBOARD MAIN SCRIPT ====================
+import express from "express";
+import bcrypt from "bcrypt";
+import jwt from "jsonwebtoken";
+import dotenv from "dotenv";
+import cookieParser from "cookie-parser";
+import path from "path";
+import { fileURLToPath } from 'url';
+import mongoose from "mongoose";
+import { connectDB, User, Category, InventoryItem, Product, Order, Stats, MenuItem, StockNotification, Customer } from "./config/database.js";
+import categoryRoutes from "./routes/categoryroute.js";
+import productRoutes from "./routes/productroute.js";
+import stockRequestRoutes from "./routes/stockrequestroute.js";
 
-let eventSource = null;
-let isConnected = false;
-let reconnectAttempts = 0;
-const MAX_RECONNECT_ATTEMPTS = 5;
+dotenv.config();
 
-// Store sales data for chart scaling
-let salesChartData = {
-    last7Days: [],
-    dailySales: [],
-    maxDailySale: 0,
-    todaySales: 0
-};
-
-// Animation state
-let chartAnimationInProgress = false;
-
-// ==================== LOGOUT FUNCTIONALITY ====================
-function initLogout() {
-    const logoutBtn = document.getElementById('logoutBtn');
-    const logoutLink = document.querySelector('[href*="logout"]');
-    
-    if (logoutBtn) {
-        logoutBtn.addEventListener('click', handleLogout);
-        console.log('✅ Logout button event listener added');
-    }
-    
-    if (logoutLink) {
-        logoutLink.addEventListener('click', function(e) {
-            e.preventDefault();
-            handleLogout();
-        });
-        console.log('✅ Logout link event listener added');
-    }
-    
-    // Also look for any element with logout class
-    document.querySelectorAll('.logout-btn, .btn-logout, [onclick*="logout"]').forEach(element => {
-        if (!element.hasAttribute('data-logout-handled')) {
-            element.setAttribute('data-logout-handled', 'true');
-            element.addEventListener('click', function(e) {
-                e.preventDefault();
-                handleLogout();
-            });
-        }
-    });
-}
-
-async function handleLogout(e) {
-    if (e) e.preventDefault();
-    
-    console.log('🚪 Logout initiated...');
-    
-    // Show confirmation dialog
-    const confirmed = confirm('Are you sure you want to logout?');
-    if (!confirmed) return;
-    
-    // Show loading state
-    showLogoutLoading();
-    
-    try {
-        // Cleanup dashboard resources first
-        cleanup();
-        
-        // Send logout request
-        const response = await fetch('/api/auth/logout', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            credentials: 'same-origin'
-        });
-        
-        if (response.ok) {
-            console.log('✅ Logout successful');
-            // Clear any local storage/session data
-            clearLocalData();
-            
-            // Redirect to login page
-            setTimeout(() => {
-                window.location.href = '/login';
-            }, 500);
-            
-        } else {
-            throw new Error('Logout request failed');
-        }
-        
-    } catch (error) {
-        console.error('❌ Logout error:', error);
-        
-        // Fallback: try traditional logout
-        tryFallbackLogout();
-    }
-}
-
-function showLogoutLoading() {
-    // Create loading overlay
-    const loadingOverlay = document.createElement('div');
-    loadingOverlay.id = 'logout-loading';
-    loadingOverlay.style.cssText = `
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        background: rgba(0, 0, 0, 0.7);
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        z-index: 99999;
-        color: white;
-        font-family: Arial, sans-serif;
-    `;
-    
-    loadingOverlay.innerHTML = `
-        <div class="spinner" style="
-            width: 50px;
-            height: 50px;
-            border: 5px solid rgba(255,255,255,0.3);
-            border-radius: 50%;
-            border-top-color: #fff;
-            animation: spin 1s ease-in-out infinite;
-            margin-bottom: 20px;
-        "></div>
-        <h3 style="margin: 0 0 10px 0;">Logging out...</h3>
-        <p style="opacity: 0.8; margin: 0;">Please wait</p>
-    `;
-    
-    // Add spinner animation
-    const style = document.createElement('style');
-    style.textContent = `
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-    `;
-    document.head.appendChild(style);
-    
-    document.body.appendChild(loadingOverlay);
-}
-
-function clearLocalData() {
-    // Clear localStorage
-    localStorage.clear();
-    
-    // Clear sessionStorage
-    sessionStorage.clear();
-    
-    // Clear any cookies that might be set
-    document.cookie.split(";").forEach(function(c) {
-        document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
-    });
-    
-    console.log('🧹 Local data cleared');
-}
-
-function tryFallbackLogout() {
-    console.log('🔄 Trying fallback logout methods...');
-    
-    // Method 1: Direct redirect to logout endpoint
-    window.location.href = '/logout';
-    
-    // Method 2: If that doesn't work, try after delay
-    setTimeout(() => {
-        window.location.href = '/auth/logout';
-    }, 1000);
-    
-    // Method 3: Final fallback
-    setTimeout(() => {
-        window.location.href = '/login?logout=true';
-    }, 2000);
-}
-
-// ==================== UTILITY FUNCTIONS ====================
-function formatNumber(num) {
-    if (num === undefined || num === null || isNaN(num)) return '0';
-    return new Intl.NumberFormat('en-US').format(num);
-}
-
-function formatCurrencySimple(amount) {
-    if (amount === undefined || amount === null || isNaN(amount)) {
-        return '₱0.00';
-    }
-    
-    const numAmount = parseFloat(amount);
-    if (numAmount === 0) return '₱0.00';
-    
-    // Format with commas for thousands
-    return '₱' + numAmount.toFixed(2).replace(/\d(?=(\d{3})+\.)/g, '$&,');
-}
-
-// ==================== CHART ANIMATIONS ====================
-function animateChartBars(bars, targetHeights, duration = 1000) {
-    if (chartAnimationInProgress) return;
-    chartAnimationInProgress = true;
-    
-    const startTime = performance.now();
-    
-    function updateAnimation(currentTime) {
-        const elapsed = currentTime - startTime;
-        const progress = Math.min(elapsed / duration, 1);
-        
-        // Easing function
-        const easeOut = 1 - Math.pow(1 - progress, 3);
-        
-        bars.forEach((bar, index) => {
-            const targetHeight = targetHeights[index];
-            const currentHeight = targetHeight * easeOut;
-            
-            // Update bar height
-            bar.style.height = `${currentHeight}%`;
-            
-            // Add glow effect for today's bar
-            if (index === 6) {
-                const glowIntensity = 10 + (5 * easeOut);
-                const glowOpacity = 0.2 + (0.3 * easeOut);
-                bar.style.boxShadow = `0 0 ${glowIntensity}px rgba(76, 175, 80, ${glowOpacity})`;
-            }
-        });
-        
-        if (progress < 1) {
-            requestAnimationFrame(updateAnimation);
-        } else {
-            chartAnimationInProgress = false;
-        }
-    }
-    
-    requestAnimationFrame(updateAnimation);
-}
-
-function animateValue(element, start, end, duration = 1000, prefix = '', suffix = '') {
-    if (!element) return Promise.resolve();
-    
-    return new Promise(resolve => {
-        const startTime = performance.now();
-        const isCurrency = prefix === '₱';
-        
-        function updateValue(currentTime) {
-            const elapsed = currentTime - startTime;
-            const progress = Math.min(elapsed / duration, 1);
-            
-            // Easing function
-            const easeOut = 1 - Math.pow(1 - progress, 3);
-            const currentValue = start + (end - start) * easeOut;
-            
-            if (isCurrency) {
-                element.textContent = `${prefix}${currentValue.toFixed(2)}`;
-            } else if (suffix === '%') {
-                element.textContent = `${currentValue.toFixed(1)}${suffix}`;
-            } else {
-                element.textContent = Math.round(currentValue);
-            }
-            
-            if (progress < 1) {
-                requestAnimationFrame(updateValue);
-            } else {
-                resolve();
-            }
-        }
-        
-        requestAnimationFrame(updateValue);
-    });
-}
-
-function fadeInElement(element, delay = 0) {
-    if (!element) return;
-    
-    setTimeout(() => {
-        element.style.opacity = '0';
-        element.style.transform = 'translateY(20px)';
-        element.style.transition = 'opacity 0.5s ease, transform 0.5s ease';
-        
-        // Trigger reflow
-        void element.offsetWidth;
-        
-        element.style.opacity = '1';
-        element.style.transform = 'translateY(0)';
-    }, delay);
-}
-
-function pulseElement(element) {
-    if (!element) return;
-    
-    element.style.transition = 'all 0.3s ease';
-    element.style.transform = 'scale(1.05)';
-    element.style.boxShadow = '0 5px 20px rgba(0,0,0,0.15)';
-    
-    setTimeout(() => {
-        element.style.transform = 'scale(1)';
-        element.style.boxShadow = '';
-    }, 300);
-}
-
-// ==================== CHART FUNCTIONS ====================
-function renderSalesChart(stats) {
-    const chartBars = document.getElementById('chartBars');
-    const chartSummary = document.getElementById('chartSummary');
-    const graphStatus = document.getElementById('graphStatus');
-    
-    if (!chartBars) return;
-    
-    // Clear with fade out
-    chartBars.style.opacity = '0';
-    chartBars.style.transition = 'opacity 0.3s ease';
-    
-    setTimeout(() => {
-        chartBars.innerHTML = '';
-        
-        // Get today's date and last 7 days
-        const today = new Date();
-        const last7Days = [];
-        for (let i = 6; i >= 0; i--) {
-            const date = new Date(today);
-            date.setDate(date.getDate() - i);
-            last7Days.push(date);
-        }
-        
-        // Get day names
-        const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-        
-        // Calculate sales data for last 7 days
-        const salesData = calculateWeeklySales(stats);
-        
-        // Find maximum sales for scaling
-        const maxDailySale = Math.max(...salesData.map(day => day.amount));
-        const hasSales = maxDailySale > 0;
-        
-        // Calculate bar heights with proper scaling
-        const bars = [];
-        const targetHeights = [];
-        
-        salesData.forEach((dayData, index) => {
-            const bar = document.createElement('div');
-            const dayName = dayNames[last7Days[index].getDay()];
-            
-            // Calculate height percentage
-            let heightPercentage;
-            if (hasSales) {
-                // Scale based on max sale (5% minimum, 95% maximum)
-                heightPercentage = 5 + (dayData.amount / maxDailySale) * 90;
-                heightPercentage = Math.min(Math.max(heightPercentage, 5), 95);
-            } else {
-                // For zero sales, show minimal bars with variation
-                heightPercentage = 5 + (index * 0.5); // 5% to 8.5%
-            }
-            
-            const isToday = index === 6;
-            
-            // Create bar element
-            bar.style.cssText = `
-                height: 0%;
-                background: ${isToday ? 
-                    (hasSales ? '#4CAF50' : '#FF9800') : 
-                    (hasSales ? '#E0E0E0' : '#F5F5F5')};
-                margin: 0 6px;
-                border-radius: 4px 4px 0 0;
-                flex: 1;
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-                justify-content: flex-end;
-                position: relative;
-                cursor: pointer;
-                opacity: 0;
-                transform: translateY(20px);
-                transition: opacity 0.5s ease ${index * 100}ms, 
-                            transform 0.5s ease ${index * 100}ms;
-            `;
-            
-            // Add hover tooltip
-            bar.title = `${dayName}: ${formatCurrencySimple(dayData.amount)}`;
-            
-            // Create amount label (shown on hover)
-            const amountLabel = document.createElement('div');
-            amountLabel.style.cssText = `
-                position: absolute;
-                top: -25px;
-                left: 50%;
-                transform: translateX(-50%);
-                background: rgba(0, 0, 0, 0.8);
-                color: white;
-                padding: 2px 6px;
-                border-radius: 10px;
-                font-size: 10px;
-                font-weight: bold;
-                white-space: nowrap;
-                opacity: 0;
-                transition: opacity 0.3s ease;
-                z-index: 10;
-            `;
-            amountLabel.textContent = formatCurrencySimple(dayData.amount);
-            bar.appendChild(amountLabel);
-            
-            // Create day label
-            const dayLabel = document.createElement('div');
-            dayLabel.style.cssText = `
-                position: absolute;
-                bottom: -25px;
-                left: 50%;
-                transform: translateX(-50%);
-                color: #666;
-                font-size: 11px;
-                font-weight: ${isToday ? 'bold' : 'normal'};
-                white-space: nowrap;
-            `;
-            dayLabel.textContent = dayName;
-            bar.appendChild(dayLabel);
-            
-            // Add hover effects
-            bar.addEventListener('mouseenter', () => {
-                bar.style.transform = 'translateY(-10px) scale(1.05)';
-                amountLabel.style.opacity = '1';
-            });
-            
-            bar.addEventListener('mouseleave', () => {
-                bar.style.transform = 'translateY(0) scale(1)';
-                amountLabel.style.opacity = '0';
-            });
-            
-            // Store for animation
-            bars.push(bar);
-            targetHeights.push(heightPercentage);
-            
-            // Add to chart
-            chartBars.appendChild(bar);
-        });
-        
-        // Update status text
-        if (graphStatus) {
-            if (hasSales) {
-                const todaySales = salesData[6].amount;
-                const yesterdaySales = salesData[5].amount;
-                let changeText = '';
-                
-                if (yesterdaySales > 0) {
-                    const changePercent = ((todaySales - yesterdaySales) / yesterdaySales) * 100;
-                    if (changePercent > 0) {
-                        changeText = `↑ ${changePercent.toFixed(1)}% from yesterday`;
-                    } else if (changePercent < 0) {
-                        changeText = `↓ ${Math.abs(changePercent).toFixed(1)}% from yesterday`;
-                    } else {
-                        changeText = 'Same as yesterday';
-                    }
-                } else {
-                    changeText = 'New sales today!';
-                }
-                
-                graphStatus.textContent = `Today: ${formatCurrencySimple(todaySales)} • ${changeText}`;
-            } else {
-                graphStatus.textContent = 'No sales recorded today';
-            }
-            fadeInElement(graphStatus, 800);
-        }
-        
-        // Update summary
-        if (chartSummary) {
-            const todaySales = hasSales ? salesData[6].amount : 0;
-            chartSummary.textContent = `Today: ${formatCurrencySimple(todaySales)}`;
-            chartSummary.style.color = hasSales ? '#4CAF50' : '#FF9800';
-            chartSummary.style.fontWeight = 'bold';
-            fadeInElement(chartSummary, 1000);
-        }
-        
-        // Fade in chart container
-        chartBars.style.opacity = '1';
-        
-        // Animate bars
-        setTimeout(() => {
-            bars.forEach((bar, index) => {
-                bar.style.opacity = '1';
-                bar.style.transform = 'translateY(0)';
-            });
-            
-            // Start bar growth animation
-            setTimeout(() => {
-                animateChartBars(bars, targetHeights, 1200);
-            }, 500);
-        }, 300);
-        
-    }, 300);
-}
-
-function calculateWeeklySales(stats) {
-    const today = new Date();
-    const salesData = [];
-    
-    // Get today's sales from stats
-    const todaySales = stats.totalRevenue || 0;
-    const hasSales = todaySales > 0;
-    
-    // Generate sales for last 7 days
-    for (let i = 6; i >= 0; i--) {
-        const date = new Date(today);
-        date.setDate(date.getDate() - i);
-        
-        let daySales = 0;
-        
-        if (i === 6) { // Today
-            daySales = todaySales;
-        } else if (hasSales) {
-            // Generate realistic decreasing sales for previous days
-            const basePercentage = 30 + (i * 10); // 30% for 6 days ago, up to 80% for yesterday
-            const variation = 0.8 + Math.random() * 0.4; // Random variation between 80-120%
-            daySales = (todaySales * basePercentage / 100) * variation;
-            
-            // Round to reasonable values
-            if (daySales < 100) {
-                daySales = Math.round(daySales / 10) * 10; // Round to nearest 10
-            } else if (daySales < 1000) {
-                daySales = Math.round(daySales / 50) * 50; // Round to nearest 50
-            } else {
-                daySales = Math.round(daySales / 100) * 100; // Round to nearest 100
-            }
-            
-            // Ensure no negative values
-            daySales = Math.max(0, daySales);
-        }
-        
-        salesData.push({
-            date: date,
-            amount: daySales,
-            isToday: i === 6
-        });
-    }
-    
-    return salesData;
-}
-
-// ==================== DASHBOARD UPDATE FUNCTIONS ====================
-function updateDashboardDisplay(stats) {
-    console.log('Updating dashboard with stats:', stats);
-    
-    // Store old values for animation
-    const oldStats = {
-        totalOrders: parseInt(document.getElementById('totalOrders')?.textContent.replace(/,/g, '') || 0),
-        totalRevenue: parseFloat(document.getElementById('totalRevenue')?.textContent.replace(/[^0-9.-]+/g, "") || 0),
-        totalCustomers: parseInt(document.getElementById('totalCustomers')?.textContent.replace(/,/g, '') || 0),
-        totalProducts: parseInt(document.getElementById('totalProducts')?.textContent.replace(/,/g, '') || 0)
-    };
-    
-    // Animate updates
-    updateStatsWithAnimation(oldStats, stats);
-    
-    // Render sales chart
-    renderSalesChart(stats);
-}
-
-function updateStatsWithAnimation(oldStats, newStats) {
-    // Total Orders
-    const totalOrdersEl = document.getElementById('totalOrders');
-    if (totalOrdersEl) {
-        animateValue(totalOrdersEl, oldStats.totalOrders, newStats.totalOrders || 0, 800);
-        fadeInElement(totalOrdersEl, 200);
-    }
-    
-    // Total Revenue
-    const totalRevenueEl = document.getElementById('totalRevenue');
-    if (totalRevenueEl) {
-        const oldValue = oldStats.totalRevenue || 0;
-        const newValue = newStats.totalRevenue || 0;
-        animateValue(totalRevenueEl, oldValue, newValue, 1200, '₱');
-        fadeInElement(totalRevenueEl, 300);
-        
-        // Pulse effect for revenue update
-        setTimeout(() => {
-            pulseElement(totalRevenueEl.closest('.card'));
-        }, 1300);
-    }
-    
-    // Total Customers
-    const totalCustomersEl = document.getElementById('totalCustomers');
-    if (totalCustomersEl) {
-        animateValue(totalCustomersEl, oldStats.totalCustomers, newStats.totalCustomers || 0, 800);
-        fadeInElement(totalCustomersEl, 400);
-    }
-    
-    // Total Products
-    const totalProductsEl = document.getElementById('totalProducts');
-    if (totalProductsEl) {
-        animateValue(totalProductsEl, oldStats.totalProducts, newStats.totalProducts || 0, 800);
-        fadeInElement(totalProductsEl, 500);
-    }
-}
-
-// ==================== REAL-TIME UPDATES ====================
-function initRealTimeUpdates() {
-    console.log('🚀 Initializing real-time updates...');
-    
-    setupSSEConnection();
-    
-    fetchDashboardStats();
-    
-    // Regular refresh every 30 seconds
-    setInterval(fetchDashboardStats, 30000);
-}
-
-function setupSSEConnection() {
-    console.log('📡 Setting up SSE connection...');
-    
-    if (eventSource) {
-        eventSource.close();
-        eventSource = null;
-    }
-    
-    eventSource = new EventSource('/api/admin/events', {
-        withCredentials: true
-    });
-    
-    eventSource.onopen = () => {
-        console.log('✅ Connected to real-time server');
-        isConnected = true;
-        reconnectAttempts = 0;
-    };
-    
-    eventSource.onmessage = (event) => {
-        console.log('📥 Received SSE message:', event.data);
-        try {
-            const data = JSON.parse(event.data);
-            handleSSEEvent(data);
-        } catch (error) {
-            console.error('❌ Error parsing SSE event:', error);
-        }
-    };
-    
-    eventSource.addEventListener('new_order', (event) => {
-        try {
-            const data = JSON.parse(event.data);
-            handleNewOrderEvent(data);
-        } catch (error) {
-            console.error('❌ Error processing new order event:', error);
-        }
-    });
-    
-    eventSource.addEventListener('stats_update', (event) => {
-        try {
-            const data = JSON.parse(event.data);
-            handleStatsUpdateEvent(data);
-        } catch (error) {
-            console.error('❌ Error processing stats update:', error);
-        }
-    });
-    
-    eventSource.onerror = (error) => {
-        console.error('❌ SSE connection error:', error);
-        isConnected = false;
-        
-        if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-            reconnectAttempts++;
-            const delay = Math.min(3000 * Math.pow(2, reconnectAttempts), 30000);
-            console.log(`🔄 Reconnecting in ${delay}ms (attempt ${reconnectAttempts})...`);
-            
-            setTimeout(() => {
-                setupSSEConnection();
-            }, delay);
-        } else {
-            console.error('❌ Max reconnection attempts reached. Real-time updates disabled.');
-            // Fall back to polling
-            setInterval(fetchDashboardStats, 10000);
-        }
-    };
-}
-
-function handleSSEEvent(data) {
-    console.log('🎯 Handling SSE event:', data.type);
-    
-    switch (data.type) {
-        case 'connected':
-            console.log('✅ ' + (data.message || 'Connected to real-time updates'));
-            break;
-            
-        case 'new_order':
-            handleNewOrderEvent(data.data);
-            break;
-            
-        case 'stats_update':
-            handleStatsUpdateEvent(data.data);
-            break;
-            
-        default:
-            console.log('❓ Unknown event type:', data.type);
-    }
-}
-
-function handleNewOrderEvent(orderData) {
-    console.log('🆕 New order received:', orderData.orderNumber);
-    
-    showOrderNotification(orderData);
-    
-    updateOrdersTable(orderData);
-    
-    fetchDashboardStats();
-}
-
-function handleStatsUpdateEvent(statsData) {
-    console.log('📊 Stats update event received, refetching dashboard stats...');
-    // Refetch all stats to get complete data
-    fetchDashboardStats();
-}
-
-// ==================== NOTIFICATION SYSTEM ====================
-function showOrderNotification(order) {
-    const existing = document.querySelector('.order-notification');
-    if (existing) existing.remove();
-    
-    const notification = document.createElement('div');
-    notification.className = 'order-notification';
-    notification.innerHTML = `
-        <div class="notification-header">
-            <strong>🆕 New Order!</strong>
-            <button onclick="this.parentElement.parentElement.remove()">×</button>
-        </div>
-        <div class="notification-body">
-            <p><strong>Order #:</strong> ${order.orderNumber || 'N/A'}</p>
-            <p><strong>Total:</strong> ${formatCurrencySimple(order.total || 0)}</p>
-            <p><strong>Type:</strong> ${order.type || 'Dine In'}</p>
-            <p><strong>Items:</strong> ${order.items || order.itemCount || 1}</p>
-            <p><small>${order.timestamp || new Date().toLocaleTimeString()}</small></p>
-        </div>
-    `;
-    
-    addNotificationStyles();
-    document.body.appendChild(notification);
-    
-    // Auto-remove after 8 seconds
-    setTimeout(() => {
-        if (notification.parentElement) {
-            notification.remove();
-        }
-    }, 8000);
-}
-
-function addNotificationStyles() {
-    if (!document.getElementById('notification-styles')) {
-        const style = document.createElement('style');
-        style.id = 'notification-styles';
-        style.textContent = `
-            .order-notification {
-                position: fixed;
-                top: 20px;
-                right: 20px;
-                background: white;
-                border-left: 4px solid #4CAF50;
-                border-radius: 8px;
-                padding: 15px;
-                width: 320px;
-                box-shadow: 0 4px 20px rgba(0,0,0,0.15);
-                z-index: 10000;
-                animation: slideIn 0.3s ease-out;
-                font-family: Arial, sans-serif;
-                backdrop-filter: blur(10px);
-            }
-            
-            @keyframes slideIn {
-                from { transform: translateX(100%); opacity: 0; }
-                to { transform: translateX(0); opacity: 1; }
-            }
-            
-            @keyframes slideOut {
-                from { transform: translateX(0); opacity: 1; }
-                to { transform: translateX(100%); opacity: 0; }
-            }
-            
-            .notification-header {
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-                margin-bottom: 10px;
-                padding-bottom: 8px;
-                border-bottom: 1px solid #eee;
-            }
-            
-            .notification-header strong {
-                color: #333;
-                font-size: 16px;
-            }
-            
-            .notification-header button {
-                background: none;
-                border: none;
-                font-size: 20px;
-                cursor: pointer;
-                color: #999;
-                padding: 0;
-                width: 24px;
-                height: 24px;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                border-radius: 4px;
-                transition: all 0.2s ease;
-            }
-            
-            .notification-header button:hover {
-                background: #f5f5f5;
-                color: #333;
-            }
-            
-            .notification-body p {
-                margin: 5px 0;
-                font-size: 14px;
-                line-height: 1.4;
-            }
-            
-            .notification-body strong {
-                color: #555;
-                font-weight: 600;
-                display: inline-block;
-                width: 80px;
-            }
-            
-            .notification-body small {
-                color: #888;
-                font-size: 12px;
-            }
-        `;
-        document.head.appendChild(style);
-    }
-}
-
-// ==================== TABLE UPDATES ====================
-function updateOrdersTable(order) {
-    const tableBody = document.getElementById('ordersTableBody');
-    if (!tableBody) return;
-    
-    const newRow = document.createElement('tr');
-    newRow.innerHTML = `
-        <td>${order.orderNumber || 'N/A'}</td>
-        <td>${order.timestamp || new Date().toLocaleTimeString()}</td>
-        <td>${order.customerName || 'Walk-in'}</td>
-        <td>${formatCurrencySimple(order.total || 0)}</td>
-    `;
-    
-    newRow.style.animation = 'fadeIn 0.5s ease';
-    
-    if (tableBody.firstChild) {
-        tableBody.insertBefore(newRow, tableBody.firstChild);
-    } else {
-        tableBody.appendChild(newRow);
-    }
-    
-    // Keep only last 10 orders
-    const rows = tableBody.getElementsByTagName('tr');
-    if (rows.length > 10) {
-        tableBody.removeChild(rows[rows.length - 1]);
-    }
-    
-    addFadeInAnimation();
-}
-
-function addFadeInAnimation() {
-    if (!document.getElementById('fadeIn-animation')) {
-        const style = document.createElement('style');
-        style.id = 'fadeIn-animation';
-        style.textContent = `
-            @keyframes fadeIn {
-                from { 
-                    opacity: 0; 
-                    transform: translateY(-10px); 
-                    background-color: rgba(76, 175, 80, 0.1);
-                }
-                to { 
-                    opacity: 1; 
-                    transform: translateY(0); 
-                    background-color: transparent;
-                }
-            }
-        `;
-        document.head.appendChild(style);
-    }
-}
-
-// ==================== API FUNCTIONS ====================
-async function fetchDashboardStats() {
-    try {
-        console.log('📊 Fetching dashboard stats...');
-        
-        const response = await fetch('/api/dashboard/stats', {
-            credentials: 'include'
-        });
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        
-        const result = await response.json();
-        console.log('📊 API Response:', result);
-        
-        const stats = result.success ? result.data : result;
-        console.log('📊 Stats extracted:', {
-            totalOrders: stats.totalOrders,
-            todaysOrders: stats.todaysOrders,
-            totalCustomers: stats.totalCustomers,
-            totalProducts: stats.totalProducts
-        });
-        
-        updateDashboardDisplay(stats);
-        
-        // Fetch today's orders separately
-        try {
-            const ordersResponse = await fetch('/api/orders/today', {
-                credentials: 'include'
-            });
-            if (ordersResponse.ok) {
-                const ordersResult = await ordersResponse.json();
-                if (ordersResult.success && ordersResult.data) {
-                    console.log('📋 Today\'s orders loaded:', ordersResult.data.length);
-                    updateRecentOrdersTable(ordersResult.data);
-                }
-            }
-        } catch (ordersError) {
-            console.error('❌ Error fetching today\'s orders:', ordersError);
-        }
-        
-        if (stats.topProducts && stats.topProducts.length > 0) {
-            updateTopItemsTable(stats.topProducts);
-        }
-        
-        if (stats.lowStockItems || stats.outOfStockItems) {
-            loadInventoryStatus();
-        }
-        
-    } catch (error) {
-        console.error('❌ Error fetching dashboard stats:', error);
-        const fallbackStats = {
-            totalOrders: 0,
-            totalRevenue: 0,
-            totalCustomers: 0,
-            totalProducts: 0
-        };
-        updateDashboardDisplay(fallbackStats);
-    }
-}
-
-function updateRecentOrdersTable(orders) {
-    const tableBody = document.getElementById('ordersTableBody');
-    if (!tableBody || !orders) return;
-    
-    tableBody.innerHTML = '';
-    
-    console.log('📋 Updating orders table with', orders.length, 'orders');
-    
-    // Show only recent 10 orders
-    orders.slice(0, 10).forEach(order => {
-        const row = document.createElement('tr');
-        const displayCustomerId = order.customerId || 'Walk-in';
-        const orderTime = order.createdAt ? new Date(order.createdAt).toLocaleTimeString() : 'N/A';
-        
-        row.innerHTML = `
-            <td>${order.orderNumber || 'N/A'}</td>
-            <td>${orderTime}</td>
-            <td>${displayCustomerId}</td>
-            <td>${formatCurrencySimple(order.total || 0)}</td>
-        `;
-        tableBody.appendChild(row);
-    });
-}
-
-function updateTopItemsTable(topProducts) {
-    const tableBody = document.getElementById('topItemsTableBody');
-    if (!tableBody || !topProducts) return;
-    
-    tableBody.innerHTML = '';
-    
-    topProducts.slice(0, 10).forEach((product, index) => {
-        const row = document.createElement('tr');
-        const totalSales = product.quantity || product.totalSold || 0;
-        const revenue = product.revenue || product.totalRevenue || 0;
-        
-        // Determine status based on sales rank
-        let status = '📈 Trending';
-        let statusClass = 'status-trending';
-        
-        if (index < 3) {
-            status = '🔥 Hot';
-            statusClass = 'status-hot';
-        } else if (totalSales === 0) {
-            status = '📊 New';
-            statusClass = 'status-new';
-        }
-        
-        row.innerHTML = `
-            <td>${product.name || product.itemName || 'Unknown'}</td>
-            <td>${formatCurrencySimple(revenue)}</td>
-            <td><span class="status-badge ${statusClass}">${status}</span></td>
-        `;
-        tableBody.appendChild(row);
-    });
-}
-
-async function loadInventoryStatus() {
-    try {
-        console.log('📦 Loading inventory status...');
-        
-        const response = await fetch('/api/inventory');
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        
-        const result = await response.json();
-        const inventoryItems = result.success ? result.data : [];
-        
-        console.log('📦 Inventory items loaded:', inventoryItems.length);
-        
-        if (inventoryItems && inventoryItems.length > 0) {
-            updateInventoryStatusTable(inventoryItems);
-        }
-    } catch (error) {
-        console.error('❌ Error loading inventory:', error);
-    }
-}
-
-function updateInventoryStatusTable(items) {
-    const tableBody = document.getElementById('inventoryTableBody');
-    if (!tableBody) return;
-    
-    tableBody.innerHTML = '';
-    
-    // Sort by stock level (low stock first)
-    const sortedItems = items.sort((a, b) => (a.currentStock || 0) - (b.currentStock || 0));
-    
-    // Display top 8 items with lowest stock
-    sortedItems.slice(0, 8).forEach(item => {
-        const row = document.createElement('tr');
-        
-        // Determine status based on stock level
-        let status = 'In Stock';
-        let statusClass = 'status-in-stock';
-        
-        if ((item.currentStock || 0) === 0) {
-            status = 'Out of Stock';
-            statusClass = 'status-out-of-stock';
-        } else if ((item.currentStock || 0) <= 10) {
-            status = 'Low Stock';
-            statusClass = 'status-low-stock';
-        }
-        
-        row.innerHTML = `
-            <td>${item.itemName || item.name || 'N/A'}</td>
-            <td>${formatNumber(item.currentStock || 0)} ${item.unit || 'units'}</td>
-            <td><span class="status-badge ${statusClass}">${status}</span></td>
-        `;
-        tableBody.appendChild(row);
-    });
-}
-
-// ==================== STYLES ====================
-function addDashboardStyles() {
-    if (!document.getElementById('dashboard-styles')) {
-        const style = document.createElement('style');
-        style.id = 'dashboard-styles';
-        style.textContent = `
-            /* Loading animation */
-            @keyframes loadingPulse {
-                0%, 100% { opacity: 1; transform: scale(1); }
-                50% { opacity: 0.7; transform: scale(0.98); }
-            }
-            
-            @keyframes cardGlow {
-                0%, 100% { box-shadow: 0 2px 10px rgba(0,0,0,0.08); }
-                50% { box-shadow: 0 5px 20px rgba(76, 175, 80, 0.2); }
-            }
-            
-            .loading-pulse {
-                animation: loadingPulse 1.5s ease-in-out infinite;
-            }
-            
-            .card-animated {
-                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            }
-            
-            .card-animated:hover {
-                transform: translateY(-8px);
-                box-shadow: 0 12px 24px rgba(0,0,0,0.1) !important;
-            }
-            
-            /* Chart styles */
-            .chart-container {
-                position: relative;
-                min-height: 250px;
-                background: white;
-                border-radius: 12px;
-                padding: 20px;
-                box-shadow: 0 4px 12px rgba(0,0,0,0.05);
-                overflow: hidden;
-            }
-            
-            .chart-container::before {
-                content: '';
-                position: absolute;
-                top: 0;
-                left: 0;
-                right: 0;
-                height: 4px;
-                background: linear-gradient(90deg, #4CAF50, #8BC34A);
-            }
-            
-            /* Status badges */
-            .status-badge {
-                display: inline-block;
-                padding: 3px 10px;
-                border-radius: 20px;
-                font-size: 12px;
-                font-weight: bold;
-                text-align: center;
-                min-width: 80px;
-            }
-            
-            .status-hot {
-                background: #ffebee;
-                color: #c62828;
-            }
-            
-            .status-trending {
-                background: #e3f2fd;
-                color: #1565c0;
-            }
-            
-            .status-new {
-                background: #f3e5f5;
-                color: #7b1fa2;
-            }
-            
-            .status-in-stock {
-                background: #e8f5e9;
-                color: #2e7d32;
-            }
-            
-            .status-low-stock {
-                background: #fff3e0;
-                color: #ef6c00;
-            }
-            
-            .status-out-of-stock {
-                background: #ffebee;
-                color: #c62828;
-            }
-            
-            /* Table styles */
-            table tbody tr {
-                transition: all 0.3s ease;
-            }
-            
-            table tbody tr:hover {
-                background: #f8f9fa;
-                transform: translateX(5px);
-            }
-            
-            /* Stats cards */
-            .stat-card {
-                position: relative;
-                overflow: hidden;
-                border: none;
-                border-radius: 12px;
-                box-shadow: 0 4px 12px rgba(0,0,0,0.05);
-                transition: all 0.3s ease;
-            }
-            
-            .stat-card:hover {
-                transform: translateY(-5px);
-                box-shadow: 0 8px 25px rgba(0,0,0,0.1);
-            }
-            
-            .stat-card .card-title {
-                color: #666;
-                font-size: 14px;
-                font-weight: 600;
-                margin-bottom: 8px;
-            }
-            
-            .stat-card .card-value {
-                font-size: 28px;
-                font-weight: bold;
-                color: #333;
-                margin: 0;
-            }
-            
-            /* Chart bar hover effects */
-            .chart-bar:hover {
-                filter: brightness(1.1);
-                transform: translateY(-5px) !important;
-            }
-            
-            /* Responsive */
-            @media (max-width: 768px) {
-                .chart-container {
-                    padding: 15px;
-                }
-                
-                .chart-bar {
-                    margin: 0 3px;
-                }
-                
-                .stat-card .card-value {
-                    font-size: 22px;
-                }
-            }
-        `;
-        document.head.appendChild(style);
-    }
-}
-
-// ==================== EVENT HANDLERS ====================
-function setupEventListeners() {
-    // Add click animations to cards
-    document.addEventListener('click', function(e) {
-        const card = e.target.closest('.card');
-        if (card) {
-            card.style.transform = 'scale(0.95)';
-            setTimeout(() => {
-                card.style.transform = '';
-            }, 200);
-        }
-    });
-    
-    // Refresh button
-    const refreshBtn = document.getElementById('refreshBtn');
-    if (refreshBtn) {
-        refreshBtn.addEventListener('click', function() {
-            // Add rotation animation
-            this.style.transition = 'transform 0.5s ease';
-            this.style.transform = 'rotate(360deg)';
-            
-            setTimeout(() => {
-                this.style.transform = '';
-            }, 500);
-            
-            fetchDashboardStats();
-            loadInventoryStatus();
-        });
-    }
-    
-    // Listen for payment completion events
-    window.addEventListener('paymentCompleted', function(e) {
-        console.log('💳 Payment completed, refreshing dashboard...');
-        setTimeout(() => {
-            fetchDashboardStats();
-            loadInventoryStatus();
-        }, 2000);
-    });
-    
-    // Listen for storage events (other tabs)
-    window.addEventListener('storage', function(e) {
-        if (e.key === 'orderPaymentCompleted') {
-            console.log('💳 Payment from other tab, refreshing dashboard...');
-            fetchDashboardStats();
-            loadInventoryStatus();
-        }
-    });
-    
-    // Handle page visibility
-    let refreshInterval;
-    
-    function setupAutoRefresh() {
-        if (refreshInterval) clearInterval(refreshInterval);
-        
-        refreshInterval = setInterval(() => {
-            if (!document.hidden) {
-                console.log('🔄 Auto-refreshing dashboard...');
-                fetchDashboardStats();
-                loadInventoryStatus();
-            }
-        }, 60000); // Refresh every minute
-    }
-    
-    document.addEventListener('visibilitychange', function() {
-        if (!document.hidden) {
-            setupAutoRefresh();
-        } else {
-            if (refreshInterval) clearInterval(refreshInterval);
-        }
-    });
-    
-    setupAutoRefresh();
-}
-
-// ==================== CLEANUP ====================
-function cleanup() {
-    if (eventSource) {
-        eventSource.close();
-        console.log('🔌 SSE connection closed');
-    }
-    
-    // Clear any intervals
-    const intervalId = window.setInterval(function(){}, 9999);
-    for (let i = 0; i < intervalId; i++) {
-        window.clearInterval(i);
-    }
-}
-
-// ==================== INITIALIZATION ====================
-function initializeDashboard() {
-    console.log('📄 Dashboard page loaded');
-    
-    const isDashboardPage = window.location.pathname.includes('admindashboard') || 
-                           window.location.pathname.includes('dashboard') ||
-                           document.querySelector('.dashboard-container');
-    
-    if (!isDashboardPage) return;
-    
-    console.log('🏁 Starting dashboard initialization...');
-    
-    // Add styles
-    addDashboardStyles();
-    
-    // Initialize logout functionality
-    initLogout();
-    
-    // Add animation classes to cards
-    document.querySelectorAll('.card').forEach(card => {
-        card.classList.add('card-animated');
-    });
-    
-    // Setup event listeners
-    setupEventListeners();
-    
-    // Set initial values
-    const totalRevenueEl = document.getElementById('totalRevenue');
-    if (totalRevenueEl && totalRevenueEl.textContent.trim() === '') {
-        totalRevenueEl.textContent = '₱0.00';
-    }
-    
-    // Load initial data
-    fetchDashboardStats();
-    loadInventoryStatus();
-    
-    // Start real-time updates after a short delay
-    setTimeout(() => {
-        initRealTimeUpdates();
-    }, 1500);
-    
-    // Emergency fix for peso sign
-    setInterval(() => {
-        const revenueEl = document.getElementById('totalRevenue');
-        if (revenueEl && !revenueEl.textContent.includes('₱')) {
-            console.log('Emergency: Missing ₱ sign, fixing...');
-            const current = revenueEl.textContent;
-            revenueEl.textContent = '₱' + current.replace(/[^\d.]/g, '');
-        }
-    }, 5000);
-    
-    console.log('✅ Dashboard initialized successfully');
-}
-
-// ==================== GLOBAL EXPORTS ====================
-window.fixPesoSign = function() {
-    const revenueEl = document.getElementById('totalRevenue');
-    if (revenueEl) {
-        const current = revenueEl.textContent;
-        if (!current.includes('₱')) {
-            const number = current.replace(/[^\d.]/g, '') || '0.00';
-            revenueEl.textContent = '₱' + number;
-            console.log('Fixed peso sign:', revenueEl.textContent);
-        }
-    }
-};
-
-window.refreshDashboard = function() {
-    fetchDashboardStats();
-    loadInventoryStatus();
-};
-
-window.logoutDashboard = function() {
-    handleLogout();
-};
-
-// ==================== STARTUP ====================
-document.addEventListener('DOMContentLoaded', function() {
-    initializeDashboard();
-    
-    // Cleanup on page unload
-    window.addEventListener('beforeunload', cleanup);
+const requiredEnvVars = ['JWT_SECRET', 'MONGODB_URI'];
+requiredEnvVars.forEach(varName => {
+  if (!process.env[varName]) {
+    console.error(`ERROR: ${varName} not defined in .env file`);
+    process.exit(1);
+  }
 });
 
-// Export for Node.js (if needed)
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = {
-        updateDashboardDisplay,
-        fetchDashboardStats,
-        initRealTimeUpdates,
-        cleanup,
-        handleLogout
-    };
+const app = express();
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const LOW_STOCK_THRESHOLD = 5;
+
+await connectDB();
+
+// Comprehensive Recipe Mapping
+const recipeMapping = {
+    // Meat & Poultry (meat category)
+    'Chicken': [
+        'Buttered Honey Chicken', 
+        'Buttered Spicy Chicken', 
+        'Chicken Adobo', 
+        'Fried Chicken', 
+        'Sizzling Fried Chicken',
+        'Budget Meal: Fried Chicken',
+        'Budget Meal: Buttered Honey Chicken',
+        'Budget Meal: Buttered Spicy Chicken'
+    ],
+    'Pork slices': [
+        'Korean Spicy Bulgogi (Pork)', 
+        'Korean Salt and Pepper (Pork)', 
+        'Crispy Pork Lechon Kawali',
+        'Sizzling Pork Sisig', 
+        'Sizzling Liempo', 
+        'Sizzling Porkchop',
+        'Sinigang (PORK)',
+        'Pork Shanghai',
+        'Pork Adobo'
+    ],
+    'Pork belly': [
+        'Crispy Pork Lechon Kawali',
+        'Sizzling Pork Sisig',
+        'Sizzling Liempo',
+        'Paknet (Pakbet w/ Bagnet)'
+    ],
+    'Ground pork': [
+        'Pork Shanghai',
+        'Sizzling Pork Sisig',
+        'Lumpiang Shanghai'
+    ],
+    'Bagnet': [
+        'Paknet (Pakbet w/ Bagnet)'
+    ],
+    'Pork ribs': [
+        'Sinigang (PORK)'
+    ],
+    'Pork face & ears': [
+        'Sizzling Pork Sisig'
+    ],
+    'Liver': [
+        'Sizzling Pork Sisig'
+    ],
+    'Pork chop': [
+        'Sizzling Porkchop'
+    ],
+    'Hotdogs': [
+        'Spaghetti (S)',
+        'Spaghetti (M)',
+        'Spaghetti (L)'
+    ],
+    'Bacon': [
+        'Clubhouse Sandwich'
+    ],
+    'Ham': [
+        'Clubhouse Sandwich'
+    ],
+    'Beef shanks and marrow': [
+        'Special Bulalo (good for 2-3 Persons)',
+        'Special Bulalo Buy 1 Take 1 (good for 6-8 Persons)'
+    ],
+    
+    // Seafood (seafood category)
+    'Cream dory fillet': [
+        'Cream Dory Fish Fillet',
+        'Fish and Fries'
+    ],
+    'Shrimp': [
+        'Buttered Shrimp',
+        'Sinigang (Shrimp)'
+    ],
+    'Smoked fish (tinapa)': [
+        'Tinapa Rice'
+    ],
+    'Dried fish (tuyo)': [
+        'Tuyo Pesto'
+    ],
+    
+    // Dairy & Eggs (dairy category)
+    'Butter': [
+        'Buttered Honey Chicken',
+        'Buttered Spicy Chicken',
+        'Buttered Shrimp',
+        'French fries'
+    ],
+    'Eggs': [
+        'Clubhouse Sandwich',
+        'Lumpiang Shanghai',
+        'Pork Shanghai'
+    ],
+    'Cheese': [
+        'Cheesy Nachos',
+        'Nachos Supreme',
+        'Cheesy Dynamite Lumpia',
+        'Clubhouse Sandwich'
+    ],
+    'Grated cheese': [
+        'Cheesy Nachos',
+        'Nachos Supreme',
+        'Cheesy Dynamite Lumpia'
+    ],
+    'Mayonnaise': [
+        'Clubhouse Sandwich'
+    ],
+    'Whipped cream': [
+        'Cookies & Cream HC',
+        'Cookies & Cream MC',
+        'Strawberry & Cream HC',
+        'Mango cheese cake HC'
+    ],
+    'Cream cheese': [
+        'Mango cheese cake HC'
+    ],
+    'Sour cream': [
+        'Nachos Supreme'
+    ],
+    'Non-dairy creamer': [
+        'Milk Tea Regular HC',
+        'Milk Tea Regular MC',
+        'Cafe Latte Tall',
+        'Cafe Latte Grande',
+        'Caramel Macchiato Tall',
+        'Caramel Macchiato Grande',
+        'Matcha Green Tea HC',
+        'Matcha Green Tea MC'
+    ],
+    'Milk': [
+        'Milk Tea Regular HC',
+        'Milk Tea Regular MC',
+        'Cafe Latte Tall',
+        'Cafe Latte Grande',
+        'Caramel Macchiato Tall',
+        'Caramel Macchiato Grande',
+        'Matcha Green Tea HC',
+        'Matcha Green Tea MC'
+    ],
+    
+    // Vegetables & Fruits (produce category)
+    'Garlic': [
+        'Chicken Adobo',
+        'Pork Adobo',
+        'Korean Spicy Bulgogi (Pork)',
+        'Korean Salt and Pepper (Pork)',
+        'Buttered Shrimp',
+        'Sinigang (PORK)',
+        'Sinigang (Shrimp)',
+        'Paknet (Pakbet w/ Bagnet)'
+    ],
+    'Onion': [
+        'Chicken Adobo',
+        'Pork Adobo',
+        'Korean Spicy Bulgogi (Pork)',
+        'Korean Salt and Pepper (Pork)',
+        'Sinigang (PORK)',
+        'Sinigang (Shrimp)',
+        'Paknet (Pakbet w/ Bagnet)',
+        'Clubhouse Sandwich'
+    ],
+    'Green onions': [
+        'Korean Spicy Bulgogi (Pork)',
+        'Korean Salt and Pepper (Pork)'
+    ],
+    'Carrots': [
+        'Pancit Bihon (S)',
+        'Pancit Bihon (M)',
+        'Pancit Bihon (L)',
+        'Pancit Canton (S)',
+        'Pancit Canton (M)',
+        'Pancit Canton (L)',
+        'Sinigang (PORK)',
+        'Sinigang (Shrimp)',
+        'Paknet (Pakbet w/ Bagnet)'
+    ],
+    'Cabbage': [
+        'Pancit Bihon (S)',
+        'Pancit Bihon (M)',
+        'Pancit Bihon (L)',
+        'Pancit Canton (S)',
+        'Pancit Canton (M)',
+        'Pancit Canton (L)',
+        'Sinigang (PORK)',
+        'Sinigang (Shrimp)',
+        'Paknet (Pakbet w/ Bagnet)'
+    ],
+    'Tomato': [
+        'Sinigang (PORK)',
+        'Sinigang (Shrimp)',
+        'Paknet (Pakbet w/ Bagnet)',
+        'Clubhouse Sandwich'
+    ],
+    'Eggplant': [
+        'Paknet (Pakbet w/ Bagnet)'
+    ],
+    'Cucumber': [
+        'Cucumber Lemonade (Glass)',
+        'Cucumber Lemonade (Pitcher)',
+        'Clubhouse Sandwich'
+    ],
+    'Lettuce': [
+        'Clubhouse Sandwich'
+    ],
+    'Celery': [
+        'Sinigang (PORK)',
+        'Sinigang (Shrimp)'
+    ],
+    'Green beans': [
+        'Paknet (Pakbet w/ Bagnet)'
+    ],
+    'Spring onions': [
+        'Korean Spicy Bulgogi (Pork)',
+        'Korean Salt and Pepper (Pork)'
+    ],
+    'Chili peppers': [
+        'Buttered Spicy Chicken',
+        'Budget Meal: Buttered Spicy Chicken'
+    ],
+    'Long green chili (siling haba)': [
+        'Cheesy Dynamite Lumpia'
+    ],
+    'Jalapeños': [
+        'Nachos Supreme'
+    ],
+    'Potato strips': [
+        'Fish and Fries',
+        'French fries'
+    ],
+    'Corn on the cob': [
+        'Sinigang (PORK)',
+        'Sinigang (Shrimp)'
+    ],
+    'Ginger': [
+        'Sinigang (PORK)',
+        'Sinigang (Shrimp)'
+    ],
+    'Calamansi': [
+        'Sinigang (PORK)',
+        'Sinigang (Shrimp)',
+        'Various Filipino dishes'
+    ],
+    'Lemon': [
+        'Cucumber Lemonade (Glass)',
+        'Cucumber Lemonade (Pitcher)',
+        'Blue Lemonade (Glass)',
+        'Blue Lemonade (Pitcher)'
+    ],
+    'Mint': [
+        'Cucumber Lemonade (Glass)',
+        'Cucumber Lemonade (Pitcher)',
+        'Blue Lemonade (Glass)',
+        'Blue Lemonade (Pitcher)'
+    ],
+    'Kangkong (water spinach)': [
+        'Sinigang (PORK)',
+        'Sinigang (Shrimp)'
+    ],
+    'Radish': [
+        'Sinigang (PORK)',
+        'Sinigang (Shrimp)'
+    ],
+    'Sitaw (long beans)': [
+        'Paknet (Pakbet w/ Bagnet)'
+    ],
+    'Okra': [
+        'Sinigang (PORK)',
+        'Sinigang (Shrimp)'
+    ],
+    'Bitter melon (ampalaya)': [
+        'Paknet (Pakbet w/ Bagnet)'
+    ],
+    'Squash': [
+        'Paknet (Pakbet w/ Bagnet)'
+    ],
+    'Pechay (bok choy)': [
+        'Sinigang (PORK)',
+        'Sinigang (Shrimp)'
+    ],
+    'Basil or malunggay leaves': [
+        'Sinigang (PORK)',
+        'Sinigang (Shrimp)'
+    ],
+    'Mixed vegetables (peas, carrots)': [
+        'Paknet (Pakbet w/ Bagnet)'
+    ],
+    
+    // Dry Goods (dry category)
+    'Soy sauce': [
+        'Chicken Adobo',
+        'Pork Adobo',
+        'Korean Spicy Bulgogi (Pork)'
+    ],
+    'Brown sugar': [
+        'Korean Spicy Bulgogi (Pork)',
+        'Korean Salt and Pepper (Pork)'
+    ],
+    'Gochujang (Korean chili paste)': [
+        'Korean Spicy Bulgogi (Pork)'
+    ],
+    'Sesame oil': [
+        'Korean Spicy Bulgogi (Pork)',
+        'Korean Salt and Pepper (Pork)'
+    ],
+    'Sesame seeds': [
+        'Korean Spicy Bulgogi (Pork)',
+        'Korean Salt and Pepper (Pork)'
+    ],
+    'Salt': [
+        'All dishes'
+    ],
+    'Black pepper': [
+        'All savory dishes'
+    ],
+    'Whole peppercorns': [
+        'Sinigang (PORK)',
+        'Sinigang (Shrimp)',
+        'Special Bulalo (good for 2-3 Persons)',
+        'Special Bulalo Buy 1 Take 1 (good for 6-8 Persons)'
+    ],
+    'Cornstarch': [
+        'Crispy Pork Lechon Kawali',
+        'Fried Chicken',
+        'Cream Dory Fish Fillet'
+    ],
+    'Cooking oil': [
+        'Fried Chicken',
+        'Crispy Pork Lechon Kawali',
+        'Sizzling Fried Chicken',
+        'Sizzling Pork Sisig',
+        'Sizzling Liempo',
+        'Sizzling Porkchop',
+        'Cream Dory Fish Fillet',
+        'Fish and Fries',
+        'French fries',
+        'Lumpiang Shanghai',
+        'Pork Shanghai'
+    ],
+    'Flour': [
+        'Crispy Pork Lechon Kawali',
+        'Fried Chicken',
+        'Cream Dory Fish Fillet'
+    ],
+    'Breadcrumbs': [
+        'Crispy Pork Lechon Kawali',
+        'Fried Chicken'
+    ],
+    'Honey': [
+        'Buttered Honey Chicken',
+        'Budget Meal: Buttered Honey Chicken'
+    ],
+    'Chili flakes or hot sauce': [
+        'Buttered Spicy Chicken',
+        'Budget Meal: Buttered Spicy Chicken',
+        'Nachos Supreme'
+    ],
+    'Vinegar': [
+        'Chicken Adobo',
+        'Pork Adobo',
+        'Sizzling Pork Sisig'
+    ],
+    'Lumpia wrapper': [
+        'Lumpiang Shanghai',
+        'Cheesy Dynamite Lumpia'
+    ],
+    'Bihon/canton noodles': [
+        'Pancit Bihon (S)',
+        'Pancit Bihon (M)',
+        'Pancit Bihon (L)',
+        'Pancit Canton (S)',
+        'Pancit Canton (M)',
+        'Pancit Canton (L)'
+    ],
+    'Spaghetti noodles': [
+        'Spaghetti (S)',
+        'Spaghetti (M)',
+        'Spaghetti (L)'
+    ],
+    'Oyster sauce': [
+        'Korean Spicy Bulgogi (Pork)',
+        'Korean Salt and Pepper (Pork)'
+    ],
+    'Banana ketchup': [
+        'Spaghetti (S)',
+        'Spaghetti (M)',
+        'Spaghetti (L)'
+    ],
+    'Tomato sauce': [
+        'Spaghetti (S)',
+        'Spaghetti (M)',
+        'Spaghetti (L)'
+    ],
+    'Sugar': [
+        'All beverages',
+        'Various dishes'
+    ],
+    'Blue curaçao syrup': [
+        'Blue Lemonade (Glass)',
+        'Blue Lemonade (Pitcher)'
+    ],
+    'Raspberry/red fruit tea powder': [
+        'Red Tea (Glass)'
+    ],
+    'Espresso': [
+        'Cafe Americano Tall',
+        'Cafe Americano Grande',
+        'Cafe Latte Tall',
+        'Cafe Latte Grande',
+        'Caramel Macchiato Tall',
+        'Caramel Macchiato Grande'
+    ],
+    'Vanilla syrup': [
+        'Caramel Macchiato Tall',
+        'Caramel Macchiato Grande'
+    ],
+    'Caramel drizzle': [
+        'Caramel Macchiato Tall',
+        'Caramel Macchiato Grande'
+    ],
+    'Black tea leaves/powder': [
+        'Milk Tea Regular HC',
+        'Milk Tea Regular MC'
+    ],
+    'Matcha powder': [
+        'Matcha Green Tea HC',
+        'Matcha Green Tea MC',
+        'Matcha Green Tea HC Frappe',
+        'Matcha Green Tea MC Frappe'
+    ],
+    'Tapioca pearls (sago)': [
+        'Milk Tea Regular HC',
+        'Milk Tea Regular MC'
+    ],
+    'Sugar syrup': [
+        'All Beverages'
+    ],
+    'Chocolate cookies (Oreo)': [
+        'Cookies & Cream HC',
+        'Cookies & Cream MC'
+    ],
+    'Strawberry syrup': [
+        'Strawberry & Cream HC'
+    ],
+    'Mango syrup/puree': [
+        'Mango cheese cake HC'
+    ],
+    'Graham crumbs': [
+        'Mango cheese cake HC'
+    ],
+    'Tortilla chips': [
+        'Cheesy Nachos',
+        'Nachos Supreme'
+    ],
+    'Cheese sauce': [
+        'Cheesy Nachos',
+        'Nachos Supreme'
+    ],
+    'Salsa': [
+        'Nachos Supreme'
+    ],
+    'Tartar sauce': [
+        'Fish and Fries'
+    ],
+    'Bread': [
+        'Clubhouse Sandwich'
+    ],
+    'Nuts (pili or cashew)': [
+        'Special Bulalo (good for 2-3 Persons)',
+        'Special Bulalo Buy 1 Take 1 (good for 6-8 Persons)'
+    ],
+    'Olive oil': [
+        'Clubhouse Sandwich'
+    ],
+    'Jasmine rice': [
+        'All Rice-based dishes',
+        'Fried Rice',
+        'Plain Rice',
+        'Tinapa Rice',
+        'Tuyo Pesto'
+    ],
+    'Tamarind (sampaloc)': [
+        'Sinigang (PORK)',
+        'Sinigang (Shrimp)'
+    ],
+    'Bagoong (fermented shrimp paste)': [
+        'Paknet (Pakbet w/ Bagnet)'
+    ],
+    'Fish sauce (patis)': [
+        'Sinigang (PORK)',
+        'Sinigang (Shrimp)',
+        'Paknet (Pakbet w/ Bagnet)'
+    ],
+    'Bay leaves': [
+        'Sinigang (PORK)',
+        'Sinigang (Shrimp)',
+        'Special Bulalo (good for 2-3 Persons)',
+        'Special Bulalo Buy 1 Take 1 (good for 6-8 Persons)'
+    ],
+    'Ice': [
+        'All cold beverages',
+        'Frappe drinks'
+    ],
+    'Water': [
+        'All dishes and beverages'
+    ],
+    
+    // Beverages (beverage category)
+    'Sprite/7-Up': [
+        'Soda (Mismo)',
+        'Soda 1.5L'
+    ],
+    'Branded soda (Coke, Sprite, Royal)': [
+        'Soda (Mismo)',
+        'Soda 1.5L'
+    ],
+    
+    // Packaging (packaging category)
+    'Paper cups': [
+        'All beverage servings',
+        'Milk Tea',
+        'Coffee drinks',
+        'Frappe'
+    ],
+    'Straws': [
+        'All beverage servings',
+        'Milk Tea',
+        'Coffee drinks',
+        'Frappe'
+    ],
+    'Food containers': [
+        'All takeout orders',
+        'Budget meals packaging',
+        'Party trays'
+    ],
+    'Plastic utensils': [
+        'All food orders',
+        'Takeout packaging'
+    ],
+    'Napkins': [
+        'All orders',
+        'Customer service'
+    ]
+};
+
+// Reverse mapping
+const reverseRecipeMapping = {};
+for (const [ingredient, dishes] of Object.entries(recipeMapping)) {
+    for (const dish of dishes) {
+        if (!reverseRecipeMapping[dish]) {
+            reverseRecipeMapping[dish] = [];
+        }
+        if (!reverseRecipeMapping[dish].includes(ingredient)) {
+            reverseRecipeMapping[dish].push(ingredient);
+        }
+    }
 }
 
-console.log('✅ Dashboard script loaded');
+// ==================== CORE FUNCTIONS ====================
+
+// Check if a finished product can be made from available raw ingredients
+const checkProductAvailability = async (productName) => {
+    try {
+        const requiredIngredients = reverseRecipeMapping[productName];
+        if (!requiredIngredients || requiredIngredients.length === 0) {
+            return { 
+                available: true, 
+                reason: 'No recipe constraints',
+                requiredIngredients: [] 
+            };
+        }
+        
+        let allAvailable = true;
+        const missingIngredients = [];
+        const availableIngredients = [];
+        
+        for (const ingredient of requiredIngredients) {
+            const inventoryItem = await InventoryItem.findOne({
+                itemName: { $regex: new RegExp(`^${ingredient}$`, 'i') },
+                itemType: 'raw',
+                isActive: true
+            });
+            
+            if (!inventoryItem) {
+                allAvailable = false;
+                missingIngredients.push(`${ingredient} (not found in inventory)`);
+            } else if (inventoryItem.currentStock <= 0) {
+                allAvailable = false;
+                missingIngredients.push(`${ingredient} (out of stock)`);
+            } else {
+                availableIngredients.push({
+                    ingredient,
+                    currentStock: inventoryItem.currentStock,
+                    minStock: inventoryItem.minStock
+                });
+                
+                if (inventoryItem.currentStock < (inventoryItem.minStock || 10)) {
+                    // Just log warning, don't block availability
+                }
+            }
+        }
+        
+        return {
+            available: allAvailable,
+            missingIngredients,
+            requiredIngredients,
+            availableIngredients
+        };
+    } catch (error) {
+        console.error('Error checking product availability:', error);
+        return { 
+            available: false, 
+            error: error.message,
+            requiredIngredients: [] 
+        };
+    }
+};
+
+// When raw ingredient is restocked, update related menu items availability
+const updateRelatedMenuItems = async (rawIngredientName) => {
+    try {
+        const possibleDishes = recipeMapping[rawIngredientName];
+        if (!possibleDishes || possibleDishes.length === 0) return;
+        
+        for (const dish of possibleDishes) {
+            // Update menu item availability
+            const menuItem = await MenuItem.findOne({
+                itemName: { $regex: new RegExp(`^${dish}$`, 'i') }
+            });
+            
+            if (menuItem) {
+                // Check if all ingredients are now available
+                const availability = await checkProductAvailability(dish);
+                
+                if (availability.available && menuItem.status === 'out_of_stock') {
+                    menuItem.status = 'available';
+                    menuItem.updatedAt = new Date();
+                    menuItem.requiredIngredients = availability.requiredIngredients || [];
+                    await menuItem.save();
+                    
+                    // Also update Product if exists
+                    const product = await Product.findOne({
+                        itemName: { $regex: new RegExp(`^${dish}$`, 'i') }
+                    });
+                    
+                    if (product) {
+                        product.status = 'available';
+                        await product.save();
+                    }
+                }
+            }
+        }
+    } catch (error) {
+        console.error('Error updating related menu items:', error);
+    }
+};
+
+// When raw ingredient is used, check if it affects menu items
+const checkAffectedMenuItems = async (rawIngredientName) => {
+    try {
+        const possibleDishes = recipeMapping[rawIngredientName];
+        if (!possibleDishes || possibleDishes.length === 0) return;
+        
+        const inventoryItem = await InventoryItem.findOne({
+            itemName: { $regex: new RegExp(`^${rawIngredientName}$`, 'i') },
+            itemType: 'raw'
+        });
+        
+        if (!inventoryItem || inventoryItem.currentStock <= 0) {
+            // This ingredient is now out of stock, check all dishes that use it
+            for (const dish of possibleDishes) {
+                const availability = await checkProductAvailability(dish);
+                
+                if (!availability.available) {
+                    // Mark menu item as out of stock
+                    await MenuItem.findOneAndUpdate(
+                        { itemName: { $regex: new RegExp(`^${dish}$`, 'i') } },
+                        { 
+                            status: 'out_of_stock',
+                            updatedAt: new Date()
+                        }
+                    );
+                    
+                    // Also update Product if exists
+                    await Product.findOneAndUpdate(
+                        { itemName: { $regex: new RegExp(`^${dish}$`, 'i') } },
+                        { status: 'out_of_stock' }
+                    );
+                }
+            }
+        }
+    } catch (error) {
+        console.error('Error checking affected menu items:', error);
+    }
+};
+
+// Get recipe details for a specific dish
+const getRecipeDetails = async (dishName) => {
+    try {
+        const requiredIngredients = reverseRecipeMapping[dishName] || [];
+        const ingredientDetails = [];
+        
+        for (const ingredient of requiredIngredients) {
+            const inventoryItem = await InventoryItem.findOne({
+                itemName: { $regex: new RegExp(`^${ingredient}$`, 'i') },
+                itemType: 'raw'
+            });
+            
+            ingredientDetails.push({
+                ingredient,
+                available: inventoryItem ? inventoryItem.currentStock > 0 : false,
+                currentStock: inventoryItem ? inventoryItem.currentStock : 0,
+                minStock: inventoryItem ? inventoryItem.minStock : 0,
+                unit: inventoryItem ? inventoryItem.unit : 'unit'
+            });
+        }
+        
+        return {
+            dishName,
+            requiredIngredients: ingredientDetails,
+            totalIngredients: requiredIngredients.length,
+            availableIngredients: ingredientDetails.filter(i => i.available).length
+        };
+    } catch (error) {
+        console.error('Error getting recipe details:', error);
+        return {
+            dishName,
+            requiredIngredients: [],
+            totalIngredients: 0,
+            availableIngredients: 0,
+            error: error.message
+        };
+    }
+};
+
+// Initialize database with proper separation
+const initializeDatabase = async () => {
+    try {
+        // Check and create admin user only
+        const adminExists = await User.findOne({ username: 'admin' });
+        if (!adminExists) {
+            const hashedPassword = bcrypt.hashSync('admin123', 10);
+            await User.create({
+                username: 'admin',
+                password: hashedPassword,
+                role: 'admin',
+                status: 'active'
+            });
+        
+        }
+        
+        // Create default categories (empty initially)
+        const categoryCount = await Category.countDocuments();
+        if (categoryCount === 0) {
+            const defaultCategories = [
+                { name: 'Rice Bowl Meals' },
+                { name: 'Hot Sizzlers' },
+                { name: 'Party Tray' },
+                { name: 'Drinks' },
+                { name: 'Coffee' },
+                { name: 'Milk Tea' },
+                { name: 'Frappe' },
+                { name: 'Snacks & Appetizer' },
+                { name: 'Budget Meals Served with Rice' },
+                { name: 'Specialties' }
+            ];
+            await Category.insertMany(defaultCategories);
+        }
+        
+        // Clean up any existing invalid MenuItem documents
+        await MenuItem.deleteMany({
+            $or: [
+                { itemName: null },
+                { itemName: '' },
+                { itemName: undefined },
+                { name: null },
+                { name: '' },
+                { name: undefined }
+            ]
+        });
+        
+    } catch (error) {
+        console.error('Database initialization error:', error);
+    }
+};
+
+await initializeDatabase();
+
+// WebSocket-like functionality for admin notifications
+const adminClients = new Set();
+
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(cookieParser());
+app.use(express.static(path.join(__dirname, "public")));
+app.use('/images', express.static(path.join(__dirname, "images")));
+// Serve default_food.png when code requests default_food.jpg
+app.get('/images/default_food.jpg', (req, res) => {
+    res.sendFile(path.join(__dirname, 'images', 'default_food.png'));
+});
+app.set("view engine", "ejs");
+app.set('views', path.join(__dirname, 'views'));
+
+// Middleware
+const verifyToken = (req, res, next) => {
+    try {
+        const token = req.cookies.token;
+        if (!token) {
+            const wantsJson = req.path.startsWith('/api/') || req.xhr || (req.get && req.get('Accept') && req.get('Accept').includes('application/json'));
+            if (wantsJson) {
+                return res.status(401).json({ success: false, message: 'Unauthorized' });
+            }
+            return res.redirect("/login");
+        }
+
+        req.user = jwt.verify(token, process.env.JWT_SECRET);
+        next();
+    } catch (err) {
+        console.error('Token verification error:', err.message);
+        res.clearCookie("token");
+        const wantsJson = req.path.startsWith('/api/') || req.xhr || (req.get && req.get('Accept') && req.get('Accept').includes('application/json'));
+        if (wantsJson) {
+            return res.status(401).json({ success: false, message: 'Invalid or expired token' });
+        }
+        res.redirect("/login");
+    }
+};
+
+const verifyAdmin = (req, res, next) => {
+    if (req.user.role !== "admin") {
+        return res.redirect("/staffdashboard");
+    }
+    next();
+};
+
+// Real-time updates for admin dashboard
+app.get('/api/admin/events', verifyToken, verifyAdmin, (req, res) => {
+    res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'X-Accel-Buffering': 'no'
+    });
+
+    res.write('data: {"type": "connected", "message": "Connected to real-time updates"}\n\n');
+
+    const clientId = Date.now();
+    const client = {
+        id: clientId,
+        res: res
+    };
+    
+    adminClients.add(client);
+
+    req.on('close', () => {
+        adminClients.delete(client);
+    });
+});
+
+const broadcastToAdmins = (data) => {
+    if (adminClients.size === 0) {
+        return;
+    }
+    
+    const eventData = `data: ${JSON.stringify(data)}\n\n`;
+    
+    adminClients.forEach(client => {
+        try {
+            client.res.write(eventData);
+            if (client.res.flush) {
+                client.res.flush();
+            }
+        } catch (error) {
+            adminClients.delete(client);
+        }
+    });
+};
+
+const sendOrderNotification = (order) => {
+    broadcastToAdmins({
+        type: 'new_order',
+        data: {
+            id: order._id.toString(),
+            orderNumber: order.orderNumber || `ORD-${Date.now()}`,
+            total: order.total || 0,
+            type: order.type || 'Dine In',
+            paymentMethod: order.payment?.method || 'cash',
+            timestamp: new Date().toLocaleTimeString(),
+            items: order.items?.length || 0,
+            createdAt: order.createdAt || new Date(),
+            customerId: order.customerId || null
+        },
+        message: `New order #${order.orderNumber} received!`
+    });
+};
+
+const sendLowStockAlert = async (inventoryItem) => {
+    const lowStockCount = await InventoryItem.countDocuments({
+        currentStock: { $lt: LOW_STOCK_THRESHOLD, $gte: 1 },
+        isActive: true
+    });
+
+    broadcastToAdmins({
+        type: 'low_stock_alert',
+        data: {
+            inventoryItemId: inventoryItem._id,
+            itemName: inventoryItem.itemName,
+            currentStock: inventoryItem.currentStock,
+            minStock: inventoryItem.minStock,
+            lowStockCount: lowStockCount
+        },
+        message: `Low stock alert: ${inventoryItem.itemName} has only ${inventoryItem.currentStock} left!`
+    });
+};
+
+// Helper function to generate customer ID
+const generateCustomerId = () => {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    let id = '';
+    for (let i = 0; i < 10; i++) {
+        id += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return id;
+};
+
+// Routes
+app.use("/api/categories", categoryRoutes);
+app.use("/api/products", productRoutes);
+app.use("/api/stock-requests", verifyToken, stockRequestRoutes);
+
+// ==================== INVENTORY ROUTES (RAW INGREDIENTS ONLY) ====================
+
+// Get inventory items (raw ingredients only)
+app.get("/api/inventory", verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        const items = await InventoryItem.find({ itemType: 'raw' }).sort({ createdAt: -1 });
+        
+        // Add recipe info to each item
+        const itemsWithRecipeInfo = items.map(item => {
+            const itemObj = item.toObject();
+            const possibleDishes = recipeMapping[item.itemName];
+            
+            if (possibleDishes && possibleDishes.length > 0) {
+                itemObj.canMake = possibleDishes;
+            }
+            
+            return itemObj;
+        });
+        
+        res.json({ success: true, data: itemsWithRecipeInfo });
+    } catch (error) {
+        res.status(500).json({ 
+            success: false, 
+            message: error.message 
+        });
+    }
+});
+
+app.get("/api/inventory/:id", verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        const item = await InventoryItem.findOne({ 
+            _id: req.params.id, 
+            itemType: 'raw' 
+        });
+        
+        if (!item) {
+            return res.status(404).json({ 
+                success: false, 
+                message: 'Raw ingredient not found' 
+            });
+        }
+
+        const itemObj = item.toObject();
+        const possibleDishes = recipeMapping[item.itemName];
+        
+        if (possibleDishes && possibleDishes.length > 0) {
+            itemObj.canMake = possibleDishes;
+        }
+
+        res.json({ success: true, data: itemObj });
+    } catch (error) {
+        res.status(500).json({ 
+            success: false, 
+            message: error.message 
+        });
+    }
+});
+
+// Create inventory item (raw ingredient only)
+app.post("/api/inventory", verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        const { 
+            itemName, 
+            category, 
+            description,
+            currentStock,
+            minStock,
+            unit,
+            price,
+            isActive
+        } = req.body;
+
+        if (!itemName || !category) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Item name and category are required' 
+            });
+        }
+
+        const newItem = new InventoryItem({
+            itemName,
+            itemType: "raw",
+            category,
+            description: description || '',
+            currentStock: currentStock || 0,
+            minStock: minStock || 10,
+            unit: unit || 'pcs',
+            isActive: isActive !== undefined ? isActive : true,
+            price: price || 0
+        });
+
+        await newItem.save();
+
+        // Check related menu items availability
+        await updateRelatedMenuItems(itemName);
+
+        res.status(201).json({ 
+            success: true, 
+            message: 'Raw ingredient added successfully',
+            data: newItem
+        });
+    } catch (error) {
+        console.error('Error creating inventory item:', error);
+        if (error.name === 'ValidationError') {
+            return res.status(400).json({ 
+                success: false, 
+                message: error.message 
+            });
+        }
+        
+        res.status(500).json({ 
+            success: false, 
+            message: 'Server error' 
+        });
+    }
+});
+
+// Update inventory item (raw ingredient only)
+app.put("/api/inventory/:id", verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        const { 
+            itemName, 
+            category, 
+            description,
+            currentStock,
+            minStock,
+            unit,
+            price,
+            isActive
+        } = req.body;
+
+        const updatedItem = await InventoryItem.findOneAndUpdate(
+            { _id: req.params.id, itemType: 'raw' },
+            { 
+                itemName, 
+                category,
+                description,
+                currentStock,
+                minStock,
+                unit,
+                isActive,
+                price: price || 0,
+                updatedAt: Date.now()
+            },
+            { new: true, runValidators: true }
+        );
+
+        if (!updatedItem) {
+            return res.status(404).json({ 
+                success: false, 
+                message: 'Raw ingredient not found' 
+            });
+        }
+
+        // Check related menu items availability
+        await updateRelatedMenuItems(itemName);
+
+        res.json({ 
+            success: true, 
+            message: 'Raw ingredient updated successfully',
+            data: updatedItem
+        });
+    } catch (error) {
+        console.error('Error updating inventory item:', error);
+        if (error.name === 'ValidationError') {
+            return res.status(400).json({ 
+                success: false, 
+                message: error.message 
+            });
+        }
+        
+        res.status(500).json({ 
+            success: false, 
+            message: 'Server error' 
+        });
+    }
+});
+
+// Delete inventory item (raw ingredient only)
+app.delete("/api/inventory/:id", verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        const deletedItem = await InventoryItem.findOneAndDelete({ 
+            _id: req.params.id, 
+            itemType: 'raw' 
+        });
+
+        if (!deletedItem) {
+            return res.status(404).json({ 
+                success: false, 
+                message: 'Raw ingredient not found' 
+            });
+        }
+
+        res.json({ 
+            success: true, 
+            message: 'Raw ingredient deleted successfully' 
+        });
+    } catch (error) {
+        res.status(500).json({ 
+            success: false, 
+            message: 'Server error' 
+        });
+    }
+});
+
+// Restock inventory (raw ingredient only)
+app.post("/api/inventory/:id/restock", verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        const { quantity, notes, price } = req.body;
+        const itemId = req.params.id;
+        
+        if (!quantity || quantity <= 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'Please provide a valid quantity greater than 0'
+            });
+        }
+        
+        const item = await InventoryItem.findOne({ 
+            _id: itemId, 
+            itemType: 'raw' 
+        });
+        
+        if (!item) {
+            return res.status(404).json({
+                success: false,
+                message: 'Raw ingredient not found'
+            });
+        }
+        
+        const oldStock = item.currentStock;
+        item.currentStock += parseFloat(quantity);
+        
+        item.restockHistory.push({
+            quantity: parseFloat(quantity),
+            price: parseFloat(price || 0),
+            notes: notes || '',
+            addedBy: req.user.id
+        });
+        
+        await item.save();
+        
+        // Check low stock alert
+        if (item.currentStock > 0 && item.currentStock < (item.minStock || 10)) {
+            sendLowStockAlert(item);
+        }
+        
+        // Update related menu items availability
+        await updateRelatedMenuItems(item.itemName);
+        
+        res.json({
+            success: true,
+            message: 'Raw ingredient restocked successfully',
+            data: item
+        });
+    } catch (error) {
+        console.error('Restock error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error'
+        });
+    }
+});
+
+// Use inventory item (raw ingredient only)
+app.post("/api/inventory/:id/use", verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        const { quantity, notes } = req.body;
+        const itemId = req.params.id;
+        
+        if (!quantity || quantity <= 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'Please provide a valid quantity greater than 0'
+            });
+        }
+        
+        const item = await InventoryItem.findOne({ 
+            _id: itemId, 
+            itemType: 'raw' 
+        });
+        
+        if (!item) {
+            return res.status(404).json({
+                success: false,
+                message: 'Raw ingredient not found'
+            });
+        }
+        
+        if (item.currentStock < quantity) {
+            return res.status(400).json({
+                success: false,
+                message: `Insufficient stock. Available: ${item.currentStock}, Requested: ${quantity}`
+            });
+        }
+        
+        const oldStock = item.currentStock;
+        item.currentStock -= parseFloat(quantity);
+        
+        item.usageHistory.push({
+            quantity: parseFloat(quantity),
+            notes: notes || '',
+            usedBy: req.user.id
+        });
+        
+        await item.save();
+        
+        // Check if stock is now low
+        if (item.currentStock > 0 && item.currentStock < (item.minStock || 10)) {
+            sendLowStockAlert(item);
+        }
+        
+        // Check affected menu items
+        await checkAffectedMenuItems(item.itemName);
+        
+        res.json({
+            success: true,
+            message: 'Raw ingredient used successfully',
+            data: item
+        });
+    } catch (error) {
+        console.error('Use inventory error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error'
+        });
+    }
+});
+
+// Filter and search inventory (raw ingredients only)
+app.get("/api/inventory/filter/search", verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        const { category, search } = req.query;
+        let query = { itemType: 'raw' };
+
+        if (category && category !== 'all') {
+            query.category = category;
+        }
+
+        if (search) {
+            query.itemName = { $regex: search, $options: 'i' };
+        }
+
+        const items = await InventoryItem.find(query).sort({ createdAt: -1 });
+        res.json({ success: true, data: items });
+    } catch (error) {
+        res.status(500).json({ 
+            success: false, 
+            message: error.message 
+        });
+    }
+});
+
+// Get inventory categories (for raw ingredients)
+app.get("/api/inventory/categories", verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        const categories = await InventoryItem.distinct("category", { itemType: 'raw' });
+        res.json({ success: true, data: categories });
+    } catch (error) {
+        res.status(500).json({ 
+            success: false, 
+            message: error.message 
+        });
+    }
+});
+
+// Get inventory stats (raw ingredients only)
+app.get("/api/inventory/stats", verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        const totalItems = await InventoryItem.countDocuments({ itemType: 'raw' });
+        
+        const allItems = await InventoryItem.find({ itemType: 'raw' }).lean();
+        
+        let lowStockCount = 0;
+        let outOfStockCount = 0;
+        let totalValue = 0;
+        
+        for (const item of allItems) {
+            const minStockValue = item.minStock || 10;
+            const currentStockValue = item.currentStock || 0;
+            const price = item.price || 0;
+            
+            totalValue += currentStockValue * price;
+            
+            if (currentStockValue === 0) {
+                outOfStockCount++;
+            } else if (currentStockValue > 0 && currentStockValue <= minStockValue) {
+                lowStockCount++;
+            }
+        }
+        
+        res.json({
+            success: true,
+            data: {
+                totalItems,
+                lowStock: lowStockCount,
+                outOfStock: outOfStockCount,
+                totalValue
+            }
+        });
+    } catch (error) {
+        console.error('Inventory stats error:', error);
+        res.json({
+            success: true,
+            data: {
+                totalItems: 0,
+                lowStock: 0,
+                outOfStock: 0,
+                totalValue: 0
+            }
+        });
+    }
+});
+
+// Get items needing restock (raw ingredients only)
+app.get("/api/inventory/needs-restock", verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        const items = await InventoryItem.find({
+            itemType: 'raw',
+            $or: [
+                { currentStock: 0 },
+                { 
+                    $expr: { 
+                        $lte: ["$currentStock", { $ifNull: ["$minStock", 10] }]
+                    }
+                }
+            ],
+            isActive: true
+        }).sort({ currentStock: 1 });
+        
+        res.json({
+            success: true,
+            data: items
+        });
+    } catch (error) {
+        console.error('Error fetching items needing restock:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error'
+        });
+    }
+});
+
+// Get recipe details for an inventory item
+app.get("/api/inventory/:id/recipe-details", verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        const item = await InventoryItem.findOne({ 
+            _id: req.params.id, 
+            itemType: 'raw' 
+        });
+        
+        if (!item) {
+            return res.status(404).json({ 
+                success: false, 
+                message: 'Raw ingredient not found' 
+            });
+        }
+
+        const possibleDishes = recipeMapping[item.itemName] || [];
+        const dishDetails = [];
+        
+        for (const dish of possibleDishes) {
+            const recipeDetails = await getRecipeDetails(dish);
+            dishDetails.push(recipeDetails);
+        }
+        
+        res.json({
+            success: true,
+            data: {
+                ingredient: item.itemName,
+                possibleDishes,
+                dishDetails
+            }
+        });
+    } catch (error) {
+        res.status(500).json({ 
+            success: false, 
+            message: error.message 
+        });
+    }
+});
+
+// ==================== MENU MANAGEMENT ROUTES (FINISHED PRODUCTS ONLY) ====================
+
+// Get all menu items (finished products)
+app.get("/api/menu", verifyToken, async (req, res) => {
+    try {
+        const { category, search, status } = req.query;
+        let query = {};
+
+        if (category && category !== 'all') {
+            query.category = category;
+        }
+
+        if (status && status !== 'all') {
+            if (status === 'active') {
+                query.isActive = true;
+            } else if (status === 'inactive') {
+                query.isActive = false;
+            } else if (status === 'available') {
+                query.status = 'available';
+                query.isActive = true;
+            } else if (status === 'out_of_stock') {
+                query.status = 'out_of_stock';
+                query.isActive = true;
+            }
+        }
+
+        if (search) {
+            query.itemName = { $regex: search, $options: 'i' };
+        }
+
+        const items = await MenuItem.find(query).sort({ itemName: 1 });
+        
+        // Add availability info
+        const itemsWithAvailability = await Promise.all(items.map(async (item) => {
+            const itemObj = item.toObject();
+            const availability = await checkProductAvailability(item.itemName);
+            const recipeDetails = await getRecipeDetails(item.itemName);
+            
+            itemObj.availability = availability;
+            itemObj.canBeMade = availability.available;
+            itemObj.missingIngredients = availability.missingIngredients;
+            itemObj.recipeDetails = recipeDetails;
+            
+            return itemObj;
+        }));
+        
+        res.json({ success: true, data: itemsWithAvailability });
+    } catch (error) {
+        console.error('Error fetching menu items:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Server error' 
+        });
+    }
+});
+
+// Get single menu item
+app.get("/api/menu/:id", verifyToken, async (req, res) => {
+    try {
+        const item = await MenuItem.findById(req.params.id);
+        
+        if (!item) {
+            return res.status(404).json({ 
+                success: false, 
+                message: 'Menu item not found' 
+            });
+        }
+
+        const itemObj = item.toObject();
+        const availability = await checkProductAvailability(item.itemName);
+        const recipeDetails = await getRecipeDetails(item.itemName);
+        
+        itemObj.availability = availability;
+        itemObj.canBeMade = availability.available;
+        itemObj.missingIngredients = availability.missingIngredients;
+        itemObj.requiredIngredients = availability.requiredIngredients || [];
+        itemObj.recipeDetails = recipeDetails;
+
+        res.json({ success: true, data: itemObj });
+    } catch (error) {
+        res.status(500).json({ 
+            success: false, 
+            message: error.message 
+        });
+    }
+});
+
+// Create menu item (finished product)
+app.post("/api/menu", verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        const { 
+            name,
+            itemName,
+            price, 
+            category, 
+            description,
+            stockType,
+            requiredIngredients,
+            isActive
+        } = req.body;
+
+        const finalItemName = name || itemName;
+        
+        if (!finalItemName || !price || !category) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Name, price and category are required' 
+            });
+        }
+
+        // Check availability based on raw ingredients
+        const availability = await checkProductAvailability(finalItemName);
+
+        const menuItemData = {
+            itemName: finalItemName,
+            name: finalItemName,
+            price,
+            category,
+            description: description || '',
+            stockType: stockType || 'unlimited',
+            status: availability.available ? 'available' : 'out_of_stock',
+            isActive: isActive !== undefined ? isActive : true,
+            requiredIngredients: requiredIngredients || availability.requiredIngredients || []
+        };
+
+        const newItem = new MenuItem(menuItemData);
+        await newItem.save();
+
+        // Also create Product record for POS system
+        const existingProduct = await Product.findOne({
+            itemName: { $regex: new RegExp(`^${finalItemName}$`, 'i') }
+        });
+
+        if (!existingProduct) {
+            const product = new Product({
+                itemName: finalItemName,
+                price,
+                category,
+                stock: 999,
+                image: 'default_food.jpg',
+                status: availability.available ? 'available' : 'out_of_stock',
+                description: description || '',
+                menuItemId: newItem._id
+            });
+
+            await product.save();
+        }
+
+        res.status(201).json({ 
+            success: true, 
+            message: 'Menu item added successfully',
+            data: newItem
+        });
+    } catch (error) {
+        console.error('Error creating menu item:', error);
+        if (error.name === 'ValidationError') {
+            return res.status(400).json({ 
+                success: false, 
+                message: error.message 
+            });
+        }
+        
+        res.status(500).json({ 
+            success: false, 
+            message: 'Server error: ' + error.message 
+        });
+    }
+});
+
+// Update menu item (finished product)
+app.put("/api/menu/:id", verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        const { 
+            name,
+            itemName,
+            price, 
+            category, 
+            description,
+            stockType,
+            requiredIngredients,
+            isActive
+        } = req.body;
+
+        const finalItemName = name || itemName;
+
+        const updatedItem = await MenuItem.findByIdAndUpdate(
+            req.params.id,
+            { 
+                itemName: finalItemName,
+                name: finalItemName,
+                price, 
+                category,
+                description,
+                stockType,
+                isActive,
+                requiredIngredients,
+                updatedAt: Date.now()
+            },
+            { new: true, runValidators: true }
+        );
+
+        if (!updatedItem) {
+            return res.status(404).json({ 
+                success: false, 
+                message: 'Menu item not found' 
+            });
+        }
+
+        // Update corresponding Product
+        await Product.findOneAndUpdate(
+            { menuItemId: updatedItem._id },
+            {
+                itemName: finalItemName,
+                price,
+                category,
+                status: updatedItem.status,
+                description,
+                updatedAt: new Date()
+            }
+        );
+
+        res.json({ 
+            success: true, 
+            message: 'Menu item updated successfully',
+            data: updatedItem
+        });
+    } catch (error) {
+        console.error('Error updating menu item:', error);
+        if (error.name === 'ValidationError') {
+            return res.status(400).json({ 
+                success: false, 
+                message: error.message 
+            });
+        }
+        
+        res.status(500).json({ 
+            success: false, 
+            message: 'Server error' 
+        });
+    }
+});
+
+// Delete menu item (finished product)
+app.delete("/api/menu/:id", verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        const deletedItem = await MenuItem.findByIdAndDelete(req.params.id);
+
+        if (!deletedItem) {
+            return res.status(404).json({ 
+                success: false, 
+                message: 'Menu item not found' 
+            });
+        }
+
+        // Also delete corresponding Product
+        await Product.findOneAndDelete({ menuItemId: deletedItem._id });
+
+        res.json({ 
+            success: true, 
+            message: 'Menu item deleted successfully' 
+        });
+    } catch (error) {
+        res.status(500).json({ 
+            success: false, 
+            message: 'Server error' 
+        });
+    }
+});
+
+// Check menu item availability
+app.get("/api/menu/:id/availability", verifyToken, async (req, res) => {
+    try {
+        const menuItem = await MenuItem.findById(req.params.id);
+        
+        if (!menuItem) {
+            return res.status(404).json({ 
+                success: false, 
+                message: 'Menu item not found' 
+            });
+        }
+
+        const availability = await checkProductAvailability(menuItem.itemName);
+        const recipeDetails = await getRecipeDetails(menuItem.itemName);
+        
+        // Update menu item status if changed
+        if (menuItem.status !== (availability.available ? 'available' : 'out_of_stock')) {
+            menuItem.status = availability.available ? 'available' : 'out_of_stock';
+            menuItem.requiredIngredients = availability.requiredIngredients || [];
+            await menuItem.save();
+            
+            // Update Product status
+            await Product.findOneAndUpdate(
+                { menuItemId: menuItem._id },
+                { status: menuItem.status }
+            );
+        }
+
+        res.json({
+            success: true,
+            data: {
+                menuItem: menuItem.itemName,
+                available: availability.available,
+                missingIngredients: availability.missingIngredients,
+                requiredIngredients: availability.requiredIngredients,
+                recipeDetails,
+                status: menuItem.status
+            }
+        });
+    } catch (error) {
+        console.error('Error checking menu item availability:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error'
+        });
+    }
+});
+
+// Get recipe details for a menu item
+app.get("/api/menu/:id/recipe", verifyToken, async (req, res) => {
+    try {
+        const menuItem = await MenuItem.findById(req.params.id);
+        
+        if (!menuItem) {
+            return res.status(404).json({ 
+                success: false, 
+                message: 'Menu item not found' 
+            });
+        }
+
+        const recipeDetails = await getRecipeDetails(menuItem.itemName);
+        
+        res.json({
+            success: true,
+            data: recipeDetails
+        });
+    } catch (error) {
+        console.error('Error getting recipe details:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error'
+        });
+    }
+});
+
+// Bulk check menu items availability
+app.post("/api/menu/check-availability", verifyToken, async (req, res) => {
+    try {
+        const { menuItemIds } = req.body;
+        
+        if (!menuItemIds || !Array.isArray(menuItemIds)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Menu item IDs array is required'
+            });
+        }
+        
+        const results = [];
+        
+        for (const menuItemId of menuItemIds) {
+            try {
+                const menuItem = await MenuItem.findById(menuItemId);
+                
+                if (menuItem) {
+                    const availability = await checkProductAvailability(menuItem.itemName);
+                    
+                    results.push({
+                        menuItemId: menuItem._id,
+                        itemName: menuItem.itemName,
+                        available: availability.available,
+                        missingIngredients: availability.missingIngredients,
+                        currentStatus: menuItem.status
+                    });
+                }
+            } catch (err) {
+                console.error(`Error checking menu item ${menuItemId}:`, err.message);
+                results.push({
+                    menuItemId,
+                    error: err.message
+                });
+            }
+        }
+        
+        res.json({
+            success: true,
+            data: results
+        });
+    } catch (error) {
+        console.error('Error in bulk availability check:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error'
+        });
+    }
+});
+
+// Get menu categories
+app.get("/api/menu/categories", verifyToken, async (req, res) => {
+    try {
+        const categories = await MenuItem.distinct("category", { isActive: true });
+        res.json({ success: true, data: categories });
+    } catch (error) {
+        res.status(500).json({ 
+            success: false, 
+            message: error.message 
+        });
+    }
+});
+
+// Get menu stats
+app.get("/api/menu/stats", verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        const totalItems = await MenuItem.countDocuments({ isActive: true });
+        const availableItems = await MenuItem.countDocuments({ 
+            status: 'available', 
+            isActive: true 
+        });
+        const outOfStockItems = await MenuItem.countDocuments({ 
+            status: 'out_of_stock', 
+            isActive: true 
+        });
+        
+        // Get categories count
+        const categories = await MenuItem.aggregate([
+            { $match: { isActive: true } },
+            { $group: { _id: "$category", count: { $sum: 1 } } },
+            { $sort: { count: -1 } }
+        ]);
+        
+        res.json({
+            success: true,
+            data: {
+                totalItems,
+                availableItems,
+                outOfStockItems,
+                categories
+            }
+        });
+    } catch (error) {
+        console.error('Menu stats error:', error);
+        res.json({
+            success: true,
+            data: {
+                totalItems: 0,
+                availableItems: 0,
+                outOfStockItems: 0,
+                categories: []
+            }
+        });
+    }
+});
+
+// ==================== PRODUCT AVAILABILITY ENDPOINTS ====================
+
+// Check product availability based on raw ingredients
+app.get("/api/products/:itemName/availability", verifyToken, async (req, res) => {
+    try {
+        const productName = decodeURIComponent(req.params.itemName);
+        const availability = await checkProductAvailability(productName);
+        const recipeDetails = await getRecipeDetails(productName);
+        
+        res.json({
+            success: true,
+            data: {
+                ...availability,
+                recipeDetails
+            }
+        });
+    } catch (error) {
+        console.error('Error checking product availability:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error'
+        });
+    }
+});
+
+// Get all recipe mappings
+app.get("/api/recipes/mappings", verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        // Return a summary instead of the entire mapping
+        const ingredientCount = Object.keys(recipeMapping).length;
+        const dishCount = Object.keys(reverseRecipeMapping).length;
+        
+        res.json({
+            success: true,
+            data: {
+                ingredientCount,
+                dishCount,
+                sampleIngredients: Object.keys(recipeMapping).slice(0, 20),
+                sampleDishes: Object.keys(reverseRecipeMapping).slice(0, 20)
+            }
+        });
+    } catch (error) {
+        console.error('Error getting recipe mappings:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error'
+        });
+    }
+});
+
+// Get recipe for specific dish
+app.get("/api/recipes/dish/:dishName", verifyToken, async (req, res) => {
+    try {
+        const dishName = decodeURIComponent(req.params.dishName);
+        const recipeDetails = await getRecipeDetails(dishName);
+        
+        res.json({
+            success: true,
+            data: recipeDetails
+        });
+    } catch (error) {
+        console.error('Error getting recipe:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error'
+        });
+    }
+});
+
+// Get dishes that use specific ingredient
+app.get("/api/recipes/ingredient/:ingredientName", verifyToken, async (req, res) => {
+    try {
+        const ingredientName = decodeURIComponent(req.params.ingredientName);
+        const dishes = recipeMapping[ingredientName] || [];
+        
+        const dishDetails = [];
+        for (const dish of dishes) {
+            const details = await getRecipeDetails(dish);
+            dishDetails.push(details);
+        }
+        
+        res.json({
+            success: true,
+            data: {
+                ingredient: ingredientName,
+                dishes,
+                dishDetails
+            }
+        });
+    } catch (error) {
+        console.error('Error getting ingredient usage:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error'
+        });
+    }
+});
+
+// Create recipe mapping
+app.post("/api/recipes/mapping", verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        const { rawIngredient, finishedProduct } = req.body;
+        
+        if (!rawIngredient || !finishedProduct) {
+            return res.status(400).json({
+                success: false,
+                message: 'Raw ingredient and finished product are required'
+            });
+        }
+        
+        // Add to recipe mapping
+        if (!recipeMapping[rawIngredient]) {
+            recipeMapping[rawIngredient] = [];
+        }
+        
+        if (!recipeMapping[rawIngredient].includes(finishedProduct)) {
+            recipeMapping[rawIngredient].push(finishedProduct);
+        }
+        
+        // Update reverse mapping
+        if (!reverseRecipeMapping[finishedProduct]) {
+            reverseRecipeMapping[finishedProduct] = [];
+        }
+        
+        if (!reverseRecipeMapping[finishedProduct].includes(rawIngredient)) {
+            reverseRecipeMapping[finishedProduct].push(rawIngredient);
+        }
+        
+        // Update affected menu item
+        const menuItem = await MenuItem.findOne({
+            itemName: { $regex: new RegExp(`^${finishedProduct}$`, 'i') }
+        });
+        
+        if (menuItem) {
+            // Update required ingredients
+            if (!menuItem.requiredIngredients.includes(rawIngredient)) {
+                menuItem.requiredIngredients.push(rawIngredient);
+                await menuItem.save();
+            }
+            
+            // Check availability
+            const availability = await checkProductAvailability(finishedProduct);
+            if (menuItem.status !== (availability.available ? 'available' : 'out_of_stock')) {
+                menuItem.status = availability.available ? 'available' : 'out_of_stock';
+                await menuItem.save();
+                
+                // Update Product
+                await Product.findOneAndUpdate(
+                    { menuItemId: menuItem._id },
+                    { status: menuItem.status }
+                );
+            }
+        }
+        
+        res.json({
+            success: true,
+            message: 'Recipe mapping added successfully',
+            data: {
+                rawIngredient,
+                finishedProduct
+            }
+        });
+    } catch (error) {
+        console.error('Error creating recipe mapping:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error'
+        });
+    }
+});
+
+// ==================== DASHBOARD AND OTHER ROUTES ====================
+
+// Dashboard stats
+app.get("/api/dashboard/stats", verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        // Initialize all stats to 0
+        const stats = {
+            totalOrders: 0,
+            todaysOrders: 0,
+            totalMenuItems: 0,
+            availableMenuItems: 0,
+            totalCustomers: 0,
+            totalRevenue: 0,
+            todaysRevenue: 0,
+            totalInventoryItems: 0, // Renamed from totalProducts to avoid confusion
+            inventoryLowStock: 0,
+            inventoryOutOfStock: 0
+        };
+        
+        try {
+            // Total orders
+            stats.totalOrders = await Order.countDocuments() || 0;
+            
+            // Today's orders
+            const today = new Date();
+            const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+            const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
+            
+            stats.todaysOrders = await Order.countDocuments({
+                createdAt: { $gte: startOfDay, $lt: endOfDay }
+            }) || 0;
+            
+            // Menu items stats
+            stats.totalMenuItems = await MenuItem.countDocuments({ isActive: true }) || 0;
+            stats.availableMenuItems = await MenuItem.countDocuments({ 
+                status: 'available', 
+                isActive: true 
+            }) || 0;
+            
+            // Customers
+            stats.totalCustomers = await Customer.countDocuments() || 0;
+            
+            // Revenue calculations with error handling
+            try {
+                const totalRevenueResult = await Order.aggregate([
+                    { $group: { _id: null, total: { $sum: "$total" } } }
+                ]);
+                stats.totalRevenue = totalRevenueResult[0]?.total || 0;
+            } catch (revenueError) {
+                console.error('Revenue calculation error:', revenueError);
+                stats.totalRevenue = 0;
+            }
+            
+            try {
+                const todaysRevenueResult = await Order.aggregate([
+                    {
+                        $match: {
+                            createdAt: { $gte: startOfDay, $lt: endOfDay }
+                        }
+                    },
+                    { $group: { _id: null, total: { $sum: "$total" } } }
+                ]);
+                stats.todaysRevenue = todaysRevenueResult[0]?.total || 0;
+            } catch (todayRevenueError) {
+                console.error('Today revenue calculation error:', todayRevenueError);
+                stats.todaysRevenue = 0;
+            }
+            
+            // Inventory stats (raw ingredients only)
+            stats.totalInventoryItems = await InventoryItem.countDocuments({ itemType: 'raw' }) || 0;
+            
+            stats.inventoryLowStock = await InventoryItem.countDocuments({
+                itemType: 'raw',
+                currentStock: { $gt: 0, $lt: LOW_STOCK_THRESHOLD },
+                isActive: true
+            }) || 0;
+            
+            stats.inventoryOutOfStock = await InventoryItem.countDocuments({
+                itemType: 'raw',
+                currentStock: 0,
+                isActive: true
+            }) || 0;
+            
+        } catch (dbError) {
+            console.error('Database query error:', dbError);
+            // Keep all stats at 0 if there's an error
+        }
+        
+        res.json({
+            success: true,
+            data: stats
+        });
+        
+    } catch (error) {
+        console.error('Error fetching dashboard stats:', error);
+        res.json({
+            success: true,
+            data: {
+                totalOrders: 0,
+                todaysOrders: 0,
+                totalMenuItems: 0,
+                availableMenuItems: 0,
+                totalCustomers: 0,
+                totalRevenue: 0,
+                todaysRevenue: 0,
+                totalInventoryItems: 0,
+                inventoryLowStock: 0,
+                inventoryOutOfStock: 0
+            }
+        });
+    }
+});
+
+// ==================== ORDER PROCESSING ====================
+
+app.post('/api/orders', async (req, res) => {
+    try {
+        const orderData = req.body;
+        
+        if (!orderData.items || !orderData.items.length) {
+            return res.status(400).json({ 
+                success: false, 
+                message: "No items in order" 
+            });
+        }
+        
+        if (!orderData.total || orderData.total <= 0) {
+            return res.status(400).json({ 
+                success: false, 
+                message: "Total amount is required and must be greater than 0" 
+            });
+        }
+        
+        if (!orderData.payment || !orderData.payment.amountPaid) {
+            return res.status(400).json({ 
+                success: false, 
+                message: "Payment amount is required" 
+            });
+        }
+        
+        const amountPaid = orderData.payment.amountPaid || 0;
+        const total = orderData.total || 0;
+        const change = amountPaid - total;
+        
+        if (change < 0) {
+            return res.status(400).json({ 
+                success: false, 
+                message: "Insufficient payment amount" 
+            });
+        }
+        
+        if (!orderData.type) {
+            orderData.type = "Dine In";
+        }
+        
+        const today = new Date();
+        const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
+        const startOfToday = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate(), 0, 0, 0));
+        const endOfToday = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate(), 23, 59, 59));
+        const orderCount = await Order.countDocuments({
+            createdAt: {
+                $gte: startOfToday,
+                $lt: endOfToday
+            }
+        });
+        const orderNumber = `ORD-${dateStr}-${(orderCount + 1).toString().padStart(3, '0')}`;
+        
+        // Customer handling
+        let customerId = orderData.customerId;
+        let customer = null;
+        
+        if (customerId) {
+            // Try to find existing customer
+            customer = await Customer.findOne({ customerId: customerId });
+        }
+        
+        // If no customer found or no customerId provided, create a new one
+        if (!customer) {
+            customerId = generateCustomerId();
+            
+            customer = new Customer({
+                customerId: customerId,
+                totalOrders: 1,
+                totalSpent: orderData.total,
+                lastOrderDate: new Date()
+            });
+            
+            // Save customer
+            const savedCustomer = await customer.save();
+        } else {
+            // Update existing customer stats
+            customer.totalOrders += 1;
+            customer.totalSpent += orderData.total;
+            customer.lastOrderDate = new Date();
+            
+            const updatedCustomer = await customer.save();
+        }
+        
+        // VALIDATE that customerId is definitely set before creating order
+        if (!customerId || customerId.length === 0) {
+            console.error('🚨 CRITICAL ERROR: customerId is empty after customer creation!');
+            throw new Error('Customer ID is missing - cannot create order');
+        }
+        
+        const order = new Order({
+            orderNumber,
+            items: orderData.items.map(item => ({
+                itemName: item.itemName || "Unknown Item",
+                price: item.price || 0,
+                quantity: item.quantity || 1,
+                size: item.size || "Regular",
+                image: item.image || 'default_food.jpg',
+                productId: item.id || null,
+                vatable: item.vatable !== undefined ? item.vatable : true
+            })),
+            subtotal: orderData.subtotal || 0,
+            tax: orderData.tax || 0,
+            total: orderData.total,
+            payment: {
+                method: orderData.payment?.method || "cash",
+                amountPaid: amountPaid,
+                change: change,
+                status: "completed"
+            },
+            type: orderData.type,
+            status: "completed",
+            notes: orderData.notes || "",
+            customerId: customerId
+        });
+        
+        const savedOrder = await order.save();
+        
+        sendOrderNotification(savedOrder);
+        
+        // Broadcast stats update to refresh dashboard
+        broadcastToAdmins({
+            type: 'stats_update',
+            data: {
+                totalOrders: await Order.countDocuments(),
+                totalCustomers: await Customer.countDocuments(),
+                lastOrderTime: new Date().toLocaleTimeString()
+            },
+            message: 'Dashboard stats updated'
+        });
+        
+        // ==================== USE RAW INGREDIENTS WHEN ORDER IS PLACED ====================
+        try {
+            for (const item of orderData.items) {
+                // Find the menu item to get required ingredients
+                const menuItem = await MenuItem.findOne({
+                    itemName: { $regex: new RegExp(`^${item.itemName}$`, 'i') }
+                });
+                
+                if (menuItem && menuItem.requiredIngredients && menuItem.requiredIngredients.length > 0) {
+                    // Use raw ingredients based on recipe
+                    for (const ingredient of menuItem.requiredIngredients) {
+                        const inventoryItem = await InventoryItem.findOne({
+                            itemName: { $regex: new RegExp(`^${ingredient}$`, 'i') },
+                            itemType: 'raw'
+                        });
+                        
+                        if (inventoryItem) {
+                            // Calculate usage based on quantity ordered
+                            // For simplicity, we'll assume 1 unit of raw ingredient per dish
+                            const usageQuantity = item.quantity || 1;
+                            
+                            if (inventoryItem.currentStock >= usageQuantity) {
+                                inventoryItem.currentStock -= usageQuantity;
+                                inventoryItem.usageHistory.push({
+                                    quantity: usageQuantity,
+                                    notes: `Used for ${item.quantity}x ${item.itemName} (Order: ${savedOrder.orderNumber})`,
+                                    usedBy: 'system'
+                                });
+                                
+                                await inventoryItem.save();
+                                
+                                // Check if stock is now low
+                                if (inventoryItem.currentStock > 0 && inventoryItem.currentStock < (inventoryItem.minStock || 10)) {
+                                    sendLowStockAlert(inventoryItem);
+                                }
+                                
+                                // Check affected menu items
+                                await checkAffectedMenuItems(ingredient);
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (stockError) {
+            console.error('❌ Raw ingredient usage error:', stockError);
+        }
+        
+        res.json({ 
+            success: true, 
+            orderId: savedOrder._id,
+            orderNumber: savedOrder.orderNumber,
+            customerId: customerId,
+            message: "Payment and order processed successfully",
+            change: change
+        });
+        
+    } catch (error) {
+        console.error('Order creation error:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: error.message || "Failed to save order to database"
+        });
+    }
+});
+
+// ==================== CUSTOMER ROUTES ====================
+
+app.get('/api/customers', verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        const { page = 1, limit = 20, search = '' } = req.query;
+        const skip = (parseInt(page) - 1) * parseInt(limit);
+        
+        let query = {};
+        if (search) {
+            query.customerId = { $regex: search, $options: 'i' };
+        }
+        
+        const customers = await Customer.find(query)
+            .sort({ lastOrderDate: -1 })
+            .skip(skip)
+            .limit(parseInt(limit))
+            .lean();
+        
+        const total = await Customer.countDocuments(query);
+        
+        // Get order count and total spent for each customer
+        for (const customer of customers) {
+            const customerOrders = await Order.find({ customerId: customer.customerId });
+            customer.orderCount = customerOrders.length;
+            customer.totalSpent = customerOrders.reduce((sum, order) => sum + (order.total || 0), 0);
+        }
+        
+        res.json({
+            success: true,
+            data: customers,
+            pagination: {
+                page: parseInt(page),
+                limit: parseInt(limit),
+                total,
+                pages: Math.ceil(total / parseInt(limit))
+            }
+        });
+    } catch (error) {
+        console.error('Error fetching customers:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: error.message 
+        });
+    }
+});
+
+// ==================== DASHBOARD ROUTES ====================
+
+app.get("/admindashboard", verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        // Initialize all stats to 0
+        const stats = {
+            totalOrders: 0,
+            totalMenuItems: 0,
+            availableMenuItems: 0,
+            totalCustomers: 0,
+            totalInventoryItems: 0,
+            inventoryLowStock: 0,
+            inventoryOutOfStock: 0
+        };
+        
+        try {
+            stats.totalOrders = await Order.countDocuments() || 0;
+            stats.totalMenuItems = await MenuItem.countDocuments({ isActive: true }) || 0;
+            stats.availableMenuItems = await MenuItem.countDocuments({ 
+                status: 'available', 
+                isActive: true 
+            }) || 0;
+            stats.totalCustomers = await Customer.countDocuments() || 0;
+            stats.totalInventoryItems = await InventoryItem.countDocuments({ itemType: 'raw' }) || 0;
+            stats.inventoryLowStock = await InventoryItem.countDocuments({
+                itemType: 'raw',
+                currentStock: { $gt: 0, $lt: LOW_STOCK_THRESHOLD },
+                isActive: true
+            }) || 0;
+            stats.inventoryOutOfStock = await InventoryItem.countDocuments({
+                itemType: 'raw',
+                currentStock: 0,
+                isActive: true
+            }) || 0;
+        } catch (err) {
+            console.error('Error fetching stats:', err);
+            // Keep all stats at 0
+        }
+
+        res.render("admindashboard", { 
+            user: req.user, 
+            stats: stats
+        });
+    } catch (err) {
+        console.error('Error in /admindashboard route:', err);
+        res.render("admindashboard", { 
+            user: req.user, 
+            stats: { 
+                totalOrders: 0, 
+                totalMenuItems: 0,
+                availableMenuItems: 0,
+                totalCustomers: 0,
+                totalInventoryItems: 0,
+                inventoryLowStock: 0,
+                inventoryOutOfStock: 0
+            } 
+        });
+    }
+});
+
+app.get("/admindashboard/dashboard", verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        // Initialize all stats to 0
+        const stats = {
+            totalOrders: 0,
+            totalMenuItems: 0,
+            availableMenuItems: 0,
+            totalCustomers: 0,
+            totalInventoryItems: 0,
+            totalRevenue: 0,
+            inventoryLowStock: 0,
+            inventoryOutOfStock: 0
+        };
+        
+        try {
+            stats.totalOrders = await Order.countDocuments() || 0;
+            stats.totalMenuItems = await MenuItem.countDocuments({ isActive: true }) || 0;
+            stats.availableMenuItems = await MenuItem.countDocuments({ 
+                status: 'available', 
+                isActive: true 
+            }) || 0;
+            stats.totalCustomers = await Customer.countDocuments() || 0;
+            stats.totalInventoryItems = await InventoryItem.countDocuments({ itemType: 'raw' }) || 0;
+            
+            // Revenue calculation with error handling
+            try {
+                const totalRevenueResult = await Order.aggregate([
+                    { $group: { _id: null, total: { $sum: "$total" } } }
+                ]);
+                stats.totalRevenue = totalRevenueResult[0]?.total || 0;
+            } catch (revenueError) {
+                console.error('Revenue calculation error:', revenueError);
+                stats.totalRevenue = 0;
+            }
+            
+            stats.inventoryLowStock = await InventoryItem.countDocuments({
+                itemType: 'raw',
+                currentStock: { $gt: 0, $lt: LOW_STOCK_THRESHOLD },
+                isActive: true
+            }) || 0;
+            
+            stats.inventoryOutOfStock = await InventoryItem.countDocuments({
+                itemType: 'raw',
+                currentStock: 0,
+                isActive: true
+            }) || 0;
+        } catch (error) {
+            console.error('Error loading dashboard stats:', error);
+            // Keep all stats at 0
+        }
+
+        res.render("dashboard", { 
+            user: req.user,
+            stats: stats
+        });
+    } catch (error) {
+        console.error('Error loading dashboard:', error);
+        res.render("dashboard", {
+            user: req.user,
+            stats: stats
+        });
+    }
+});
+
+// Updated Inventory Page Route
+app.get("/admindashboard/Inventory", verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        // Initialize stats to 0
+        const stats = {
+            totalItems: 0,
+            lowStockCount: 0,
+            outOfStockCount: 0,
+            categoryCounts: {
+                meat: 0,
+                seafood: 0,
+                dairy: 0,
+                produce: 0,
+                dry: 0,
+                beverage: 0,
+                packaging: 0
+            }
+        };
+        
+        try {
+            stats.totalItems = await InventoryItem.countDocuments({ itemType: 'raw' });
+            
+            // Get category counts
+            const categories = await InventoryItem.distinct('category', { itemType: 'raw' });
+            for (const category of categories) {
+                const count = await InventoryItem.countDocuments({ 
+                    itemType: 'raw', 
+                    category: category 
+                });
+                // Map to appropriate category key
+                if (category.includes('Meat')) stats.categoryCounts.meat = count;
+                else if (category.includes('Seafood')) stats.categoryCounts.seafood = count;
+                else if (category.includes('Dairy')) stats.categoryCounts.dairy = count;
+                else if (category.includes('Produce')) stats.categoryCounts.produce = count;
+                else if (category.includes('Dry')) stats.categoryCounts.dry = count;
+                else if (category.includes('Beverage')) stats.categoryCounts.beverage = count;
+                else if (category.includes('Packaging')) stats.categoryCounts.packaging = count;
+            }
+            
+            // Get low stock and out of stock counts
+            stats.lowStockCount = await InventoryItem.countDocuments({
+                itemType: 'raw',
+                currentStock: { $gt: 0, $lt: LOW_STOCK_THRESHOLD },
+                isActive: true
+            });
+            
+            stats.outOfStockCount = await InventoryItem.countDocuments({
+                itemType: 'raw',
+                currentStock: 0,
+                isActive: true
+            });
+        } catch (error) {
+            console.error('Error fetching inventory stats:', error);
+        }
+        
+        // Get initial inventory items for display
+        const initialItems = await InventoryItem.find({ itemType: 'raw' })
+            .sort({ createdAt: -1 })
+            .limit(20)
+            .lean();
+        
+        // Get all categories for the dropdown
+        const allCategories = [
+            'Meat & Poultry', 'Seafood', 'Dairy & Eggs', 'Vegetables & Fruits',
+            'Dry Goods', 'Beverages', 'Packaging'
+        ];
+        
+        res.render("Inventory", {
+            user: req.user,
+            stats: stats,
+            initialItems: initialItems || [],
+            allCategories,
+            LOW_STOCK_THRESHOLD
+        });
+        
+    } catch (error) {
+        console.error('Error loading Inventory page:', error);
+        res.render("Inventory", {
+            user: req.user,
+            stats: {
+                totalItems: 0,
+                lowStockCount: 0,
+                outOfStockCount: 0,
+                categoryCounts: {
+                    meat: 0,
+                    seafood: 0,
+                    dairy: 0,
+                    produce: 0,
+                    dry: 0,
+                    beverage: 0,
+                    packaging: 0
+                }
+            },
+            initialItems: [],
+            allCategories: [],
+            LOW_STOCK_THRESHOLD: 5
+        });
+    }
+});
+
+app.get("/admindashboard/addstaff", verifyToken, verifyAdmin, (req, res) => {
+    res.render("addstaff");
+});
+
+app.get("/admindashboard/salesandreports", verifyToken, verifyAdmin, (req, res) => {
+    res.render("salesandreports", {
+        title: "Sales & Reports"
+    });
+});
+
+app.get("/admindashboard/infosettings", verifyToken, verifyAdmin, (req, res) => {
+    res.render("infosettings");
+});
+
+app.get("/admindashboard/orderhistory", verifyToken, verifyAdmin, (req, res) => {
+    res.render("orderhistory");
+});
+
+// Menu Management page
+app.get("/admindashboard/menumanagement", verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        const menuItems = await MenuItem.find().sort({ itemName: 1 }).limit(50);
+        
+        // Get categories
+        const categories = await MenuItem.distinct("category", { isActive: true });
+        
+        res.render("menumanagement", {
+            user: req.user,
+            initialMenuItems: menuItems || [],
+            categories: categories || []
+        });
+    } catch (error) {
+        res.render("menumanagement", {
+            user: req.user,
+            initialMenuItems: [],
+            categories: []
+        });
+    }
+});
+
+// Stock page - shows raw ingredients stock
+app.get("/admindashboard/stock", verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        const lowStockItems = await InventoryItem.find({
+            itemType: 'raw',
+            currentStock: { $lt: LOW_STOCK_THRESHOLD, $gte: 1 },
+            isActive: true
+        })
+        .sort({ currentStock: 1 })
+        .lean();
+        
+        const outOfStockItems = await InventoryItem.find({
+            itemType: 'raw',
+            currentStock: 0,
+            isActive: true
+        })
+        .sort({ itemName: 1 })
+        .lean();
+        
+        // Add recipe info
+        const itemsWithRecipeInfo = [...lowStockItems, ...outOfStockItems].map(item => {
+            const itemObj = item;
+            const possibleDishes = recipeMapping[item.itemName];
+            
+            if (possibleDishes && possibleDishes.length > 0) {
+                itemObj.canMake = possibleDishes;
+            }
+            
+            return itemObj;
+        });
+        
+        const lowStockWithInfo = itemsWithRecipeInfo.filter(item => item.currentStock > 0);
+        const outOfStockWithInfo = itemsWithRecipeInfo.filter(item => item.currentStock === 0);
+        
+        res.render("stock", {
+            user: req.user,
+            lowStockItems: lowStockWithInfo || [],
+            outOfStockItems: outOfStockWithInfo || [],
+            lowStockThreshold: LOW_STOCK_THRESHOLD
+        });
+    } catch (error) {
+        res.render("stock", {
+            user: req.user,
+            lowStockItems: [],
+            outOfStockItems: [],
+            lowStockThreshold: LOW_STOCK_THRESHOLD
+        });
+    }
+});
+
+// Recipe Management page
+app.get("/admindashboard/recipes", verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        // Get sample data for the recipes page
+        const sampleIngredients = Object.keys(recipeMapping).slice(0, 20);
+        const sampleDishes = Object.keys(reverseRecipeMapping).slice(0, 20);
+        
+        // Get some menu items with their recipe details
+        const menuItems = await MenuItem.find({ isActive: true })
+            .limit(10)
+            .lean();
+        
+        const menuItemsWithRecipes = [];
+        for (const item of menuItems) {
+            const recipeDetails = await getRecipeDetails(item.itemName);
+            menuItemsWithRecipes.push({
+                ...item,
+                recipeDetails
+            });
+        }
+        
+        res.render("recipes", {
+            user: req.user,
+            totalIngredients: Object.keys(recipeMapping).length,
+            totalDishes: Object.keys(reverseRecipeMapping).length,
+            sampleIngredients,
+            sampleDishes,
+            menuItemsWithRecipes: menuItemsWithRecipes || []
+        });
+    } catch (error) {
+        console.error('Error loading recipes page:', error);
+        res.render("recipes", {
+            user: req.user,
+            totalIngredients: 0,
+            totalDishes: 0,
+            sampleIngredients: [],
+            sampleDishes: [],
+            menuItemsWithRecipes: []
+        });
+    }
+});
+
+// Customer management page
+app.get("/admindashboard/customers", verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        const customers = await Customer.find()
+            .sort({ lastOrderDate: -1 })
+            .limit(50)
+            .lean();
+        
+        // Get order stats for each customer
+        for (const customer of customers) {
+            const customerOrders = await Order.find({ customerId: customer.customerId });
+            customer.orderCount = customerOrders.length;
+            customer.totalSpent = customerOrders.reduce((sum, order) => sum + (order.total || 0), 0);
+        }
+        
+        res.render("customers", {
+            user: req.user,
+            customers: customers || []
+        });
+    } catch (error) {
+        console.error('Error loading customers page:', error);
+        res.render("customers", {
+            user: req.user,
+            customers: []
+        });
+    }
+});
+
+// ==================== STAFF DASHBOARD ====================
+
+app.get("/staffdashboard", verifyToken, async (req, res) => {
+    try {
+        // Quick check - if user is admin, redirect to admin dashboard
+        if (req.user.role === "admin") {
+            return res.redirect("/admindashboard");
+        }
+
+        // Get available menu items (finished products)
+        const menuItems = await MenuItem.find({ 
+            status: 'available',
+            isActive: true 
+        }).sort({ itemName: 1 }).lean();
+        
+        // Get categories
+        const categories = await Category.find().lean();
+        
+        // Add availability info
+        const menuItemsWithAvailability = await Promise.all(menuItems.map(async (item) => {
+            const availability = await checkProductAvailability(item.itemName);
+            
+            return {
+                ...item,
+                isAvailable: availability.available,
+                missingIngredients: availability.missingIngredients,
+                canBeMade: availability.available
+            };
+        }));
+        
+        res.render("staffdashboard", {
+            user: req.user,
+            products: menuItemsWithAvailability || [],
+            categories: categories || []
+        });
+    } catch (err) {
+        console.error('❌ Staff dashboard error:', err);
+        // Even if there's an error, render the page with empty data
+        res.render("staffdashboard", {
+            user: req.user,
+            products: [],
+            categories: [],
+            error: "Failed to load menu items"
+        });
+    }
+});
+
+// ==================== AUTHENTICATION ROUTES ====================
+
+// Static pages
+const pages = ["login", "register", "order"];
+pages.forEach(page => {
+    app.get(`/${page.toLowerCase()}`, (req, res) => res.render(page));
+});
+
+app.get('/', (req, res) => {
+    res.redirect('/login');
+});
+
+app.post("/register", async (req, res) => {
+    try {
+        const referer = req.headers.referer || req.headers.referrer;
+        const isFormSubmission = referer && referer.includes('/admindashboard/addstaff');
+        
+        if (!isFormSubmission && req.headers['content-type'] && req.headers['content-type'].includes('application/x-www-form-urlencoded')) {
+            return res.status(403).send(`
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="UTF-8">
+                    <title>Access Denied</title>
+                    <style>
+                        * { margin: 0; padding: 0; box-sizing: border-box; }
+                        body { font-family: Arial, sans-serif; padding: 20px; background-color: #f5f5f5; }
+                        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+                        .toast { padding: 16px 20px; border-radius: 8px; margin-bottom: 20px;
+                                box-shadow: 0 4px 12px rgba(0,0,0,0.15); animation: slideInRight 0.5s ease;
+                                display: flex; align-items: center; gap: 12px; }
+                        .toast.error { background-color: #f8d7da; color: #721c24; border-left: 4px solid #dc3545; }
+                        @keyframes slideInRight { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+                    </style>
+                </head>
+                <body>
+                    <div class="container">
+                        <div class="toast error">
+                            <span>⚠️</span>
+                            <span>Access denied. Use admin dashboard to register staff.</span>
+                        </div>
+                    </div>
+                    <script>
+                        setTimeout(() => window.location.href = '/admindashboard', 3000);
+                    </script>
+                </body>
+                </html>
+            `);
+        }
+
+        const { user, pass, role } = req.body;
+        
+        if (!user || !pass) {
+            return res.status(400).send(`
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="UTF-8">
+                    <title>Validation Error</title>
+                    <style>
+                        * { margin: 0; padding: 0; box-sizing: border-box; }
+                        body { font-family: Arial, sans-serif; padding: 20px; background-color: #f5f5f5; }
+                        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+                        .toast { padding: 16px 20px; border-radius: 8px; margin-bottom: 20px;
+                                box-shadow: 0 4px 12px rgba(0,0,0,0.15); animation: slideInRight 0.5s ease;
+                                display: flex; align-items: center; gap: 12px; }
+                        .toast.error { background-color: #f8d7da; color: #721c24; border-left: 4px solid #dc3545; }
+                        @keyframes slideInRight { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+                    </style>
+                </head>
+                <body>
+                    <div class="container">
+                        <div class="toast error">
+                            <span>⚠️</span>
+                            <span>Username and password are required</span>
+                        </div>
+                    </div>
+                    <script>
+                        setTimeout(() => history.back(), 3000);
+                    </script>
+                </body>
+                </html>
+            `);
+        }
+
+        const existingUser = await User.findOne({ username: user });
+        if (existingUser) {
+            return res.status(409).send(`
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="UTF-8">
+                    <title>User Exists</title>
+                    <style>
+                        * { margin: 0; padding: 0; box-sizing: border-box; }
+                        body { font-family: Arial, sans-serif; padding: 20px; background-color: #f5f5f5; }
+                        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+                        .toast { padding: 16px 20px; border-radius: 8px; margin-bottom: 20px;
+                                box-shadow: 0 4px 12px rgba(0,0,0,0.15); animation: slideInRight 0.5s ease;
+                                display: flex; align-items: center; gap: 12px; }
+                        .toast.error { background-color: #f8d7da; color: #721c24; border-left: 4px solid #dc3545; }
+                        @keyframes slideInRight { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+                    </style>
+                </head>
+                <body>
+                    <div class="container">
+                        <div class="toast error">
+                            <span>⚠️</span>
+                            <span>User already exists</span>
+                        </div>
+                    </div>
+                    <script>
+                        setTimeout(() => history.back(), 3000);
+                    </script>
+                </body>
+                </html>
+            `);
+        }
+
+        const hashedPassword = bcrypt.hashSync(pass, 10);
+        const newUser = new User({ 
+            username: user, 
+            password: hashedPassword, 
+            role: role || "staff",
+            status: "active"
+        });
+
+        await newUser.save();
+        
+        res.status(201).send(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+                <title>Staff Registration Success</title>
+                <style>
+                    * { margin: 0; padding: 0; box-sizing: border-box; }
+                    body { font-family: Arial, sans-serif; padding: 20px; background-color: #f5f5f5; }
+                    .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+                    .toast { padding: 16px 20px; border-radius: 8px; margin-bottom: 20px;
+                            box-shadow: 0 4px 12px rgba(0,0,0,0.15); animation: slideInRight 0.5s ease;
+                            display: flex; align-items: center; gap: 12px; }
+                    .toast.success { background-color: #d4edda; color: #155724; border-left: 4px solid #28a745; }
+                    @keyframes slideInRight { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="toast success">
+                        <span>✅</span>
+                        <span>Staff Successfully Registered!</span>
+                    </div>
+                </div>
+                <script>
+                    setTimeout(() => window.location.href = '/admindashboard/addstaff', 2500);
+                </script>
+            </body>
+            </html>
+        `);
+    } catch (err) {
+        res.status(500).send(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+                <title>Server Error</title>
+                <style>
+                    * { margin: 0; padding: 0; box-sizing: border-box; }
+                    body { font-family: Arial, sans-serif; padding: 20px; background-color: #f5f5f5; }
+                    .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+                    .toast { padding: 16px 20px; border-radius: 8px; margin-bottom: 20px;
+                            box-shadow: 0 4px 12px rgba(0,0,0,0.15); animation: slideInRight 0.5s ease;
+                            display: flex; align-items: center; gap: 12px; }
+                    .toast.error { background-color: #f8d7da; color: #721c24; border-left: 4px solid #dc3545; }
+                    @keyframes slideInRight { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="toast error">
+                        <span>❌</span>
+                        <span>Server error: ${err.message}</span>
+                    </div>
+                </div>
+                <script>
+                    setTimeout(() => history.back(), 3000);
+                </script>
+            </body>
+            </html>
+        `);
+    }
+});
+
+app.post("/login", async (req, res) => {
+    try {
+        const { user, pass } = req.body;
+
+        const existingUser = await User.findOne({ username: user });
+        if (!existingUser) {
+            return res.render("login", {
+                error: "User not found"
+            });
+        }
+
+        if (existingUser.status === "inactive") {
+            return res.render("login", {
+                error: "Account is deactivated"
+            });
+        }
+
+        const isMatch = bcrypt.compareSync(pass, existingUser.password);
+        if (!isMatch) {
+            return res.render("login", {
+                error: "Invalid password"
+            });
+        }
+
+        const token = jwt.sign(
+            { 
+                id: existingUser._id, 
+                username: existingUser.username, 
+                role: existingUser.role 
+            },
+            process.env.JWT_SECRET,
+            { expiresIn: "365d" }
+        );
+
+        res.cookie("token", token, {
+            httpOnly: true,
+            sameSite: "strict",
+            maxAge: 1000 * 60 * 60 * 24 * 365
+        });
+
+        if (existingUser.role === "admin") {
+            return res.redirect("/admindashboard");
+        } else {
+            return res.redirect("/staffdashboard");
+        }
+
+    } catch (err) {
+        res.render("login", {
+            error: "Login error"
+        });
+    }
+});
+
+// ==================== HEALTH AND UTILITY ROUTES ====================
+
+// Health check endpoint
+app.get("/api/health", async (req, res) => {
+    try {
+        const stats = {
+            status: "online",
+            timestamp: new Date().toISOString(),
+            database: mongoose.connection.readyState === 1 ? "connected" : "disconnected",
+            inventoryItems: await InventoryItem.countDocuments({ itemType: 'raw' }),
+            menuItems: await MenuItem.countDocuments(),
+            products: await Product.countDocuments(),
+            orders: await Order.countDocuments(),
+            customers: await Customer.countDocuments(),
+            recipeMapping: {
+                ingredients: Object.keys(recipeMapping).length,
+                dishes: Object.keys(reverseRecipeMapping).length
+            }
+        };
+        
+        res.json({
+            success: true,
+            ...stats
+        });
+    } catch (error) {
+        res.json({
+            success: false,
+            status: "error",
+            message: error.message
+        });
+    }
+});
+
+// Reset recipe mappings (for development)
+app.post("/api/recipes/reset", verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        // Note: In a real application, you would reload the recipe mapping
+        // from a database or configuration file
+        
+        res.json({
+            success: true,
+            message: 'Recipe mappings are loaded from configuration',
+            data: {
+                ingredientCount: Object.keys(recipeMapping).length,
+                dishCount: Object.keys(reverseRecipeMapping).length
+            }
+        });
+    } catch (error) {
+        console.error('Error resetting recipes:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error'
+        });
+    }
+});
+
+app.get("/logout", (req, res) => {
+    res.clearCookie("token");
+    res.redirect("/login");
+});
+
+// Render login page
+app.get('/login', (req, res) => {
+    res.render('login');
+});
+
+const PORT = process.env.PORT || 5050;
+
+app.listen(PORT, () => {
+    console.log(`Server is running at http://localhost:${PORT}`);
+});

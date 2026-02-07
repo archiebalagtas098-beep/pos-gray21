@@ -22,14 +22,6 @@ export const connectDB = async () => {
 
 async function initializeDefaultData() {
   try {
-    // First, drop the problematic index if it exists
-    try {
-      await mongoose.connection.collection('menuitems').dropIndex('itemName_1');
-      console.log('✅ Dropped problematic menu item index');
-    } catch (err) {
-      // Index might not exist, that's ok
-    }
-
     // Initialize default categories
     const defaultCategories = [
       "Rice Bowl Meals",
@@ -185,7 +177,7 @@ const categorySchema = new mongoose.Schema({
 
 export const Category = mongoose.models.Category || mongoose.model('Category', categorySchema);
 
-// InventoryItem Schema (Raw Ingredients) - UPDATED
+// InventoryItem Schema (Raw Ingredients)
 const inventoryItemSchema = new mongoose.Schema({
   itemName: { 
     type: String, 
@@ -217,7 +209,7 @@ const inventoryItemSchema = new mongoose.Schema({
     default: 10,
     min: 0
   },
-  maxStock: { // ADDED: This field was missing but used in frontend
+  maxStock: {
     type: Number,
     default: 50,
     min: 0
@@ -246,17 +238,16 @@ inventoryItemSchema.index({ currentStock: 1 });
 // Update the updatedAt field before saving
 inventoryItemSchema.pre('save', function() {
   this.updatedAt = Date.now();
-
 });
 
 export const InventoryItem = mongoose.models.InventoryItem || mongoose.model('InventoryItem', inventoryItemSchema);
 
-// Product Schema (Fixed - removed name requirement or made it match seed data)
+// Product Schema
 const productSchema = new mongoose.Schema({
   itemName: { type: String, required: true },
   category: { type: String, required: true },
   price: { type: Number, required: true },
-  stock: { type: Number, default: 999 }, // Changed from 0 to 999 to match seed data
+  stock: { type: Number, default: 999 },
   image: { type: String, default: 'default_food.jpg' },
   status: { type: String, default: 'available' },
   description: { type: String, default: '' },
@@ -265,7 +256,7 @@ const productSchema = new mongoose.Schema({
 
 export const Product = mongoose.models.Product || mongoose.model('Product', productSchema);
 
-// MenuItem Schema (FIXED - no unique constraint to avoid seeding issues)
+// MenuItem Schema
 const menuItemSchema = new mongoose.Schema({
   itemName: { 
     type: String, 
@@ -286,23 +277,21 @@ const menuItemSchema = new mongoose.Schema({
     type: Boolean, 
     default: true 
   },
-  // Additional fields to help with uniqueness
   uniqueIdentifier: {
     type: String,
     unique: true,
-    sparse: true // Allow null values for uniqueness
+    sparse: true
   }
 }, {
   timestamps: true
 });
 
 // Create a compound index for name + category instead of unique name
-menuItemSchema.index({ itemName: 1, category: 1 }, { unique: false });
+menuItemSchema.index({ itemName: 1, category: 1 });
 
 // Auto-generate unique identifier before saving
 menuItemSchema.pre('save', function() {
   if (!this.uniqueIdentifier) {
-    // Create a unique identifier using name + category + timestamp
     const timestamp = Date.now().toString(36);
     const nameSlug = this.itemName.replace(/\s+/g, '-').toLowerCase().substring(0, 20);
     const categorySlug = this.category.replace(/\s+/g, '-').toLowerCase().substring(0, 10);
@@ -336,32 +325,133 @@ const orderSchema = new mongoose.Schema({
   orderNumber: { type: String },
   notes: { type: String, default: '' },
   tableNumber: { type: String }
-}, { timestamps: true });
+}, { 
+  timestamps: true 
+});
 
 export const Order = mongoose.models.Order || mongoose.model('Order', orderSchema);
 
 // Stats Schema
 const statsSchema = new mongoose.Schema({
-  date: { type: Date, required: true },
-  totalOrders: { type: Number, default: 0 },
-  ordersToday: { type: Number, default: 0 },
-  revenue: { type: Number, default: 0 },
-  revenueToday: { type: Number, default: 0 }
+  date: { 
+    type: Date, 
+    required: true,
+    unique: true
+  },
+  totalOrders: { 
+    type: Number, 
+    default: 0 
+  },
+  totalOrdersValue: { 
+    type: Number, 
+    default: 0 
+  },
+  completedOrders: { 
+    type: Number, 
+    default: 0 
+  },
+  pendingOrders: { 
+    type: Number, 
+    default: 0 
+  },
+  cancelledOrders: { 
+    type: Number, 
+    default: 0 
+  },
+  averageOrderValue: { 
+    type: Number, 
+    default: 0 
+  },
+  productsSold: { 
+    type: Number, 
+    default: 0 
+  },
+  topSellingProducts: [
+    {
+      productId: { 
+        type: mongoose.Schema.Types.ObjectId, 
+        ref: 'Product' 
+      },
+      productName: String,
+      quantitySold: Number,
+      revenue: Number
+    }
+  ],
+  lowStockProducts: [
+    {
+      productId: { 
+        type: mongoose.Schema.Types.ObjectId, 
+        ref: 'Product' 
+      },
+      productName: String,
+      currentStock: Number,
+      minStock: Number
+    }
+  ],
+  customerMetrics: {
+    newCustomers: { type: Number, default: 0 },
+    returningCustomers: { type: Number, default: 0 },
+    totalCustomers: { type: Number, default: 0 }
+  },
+  dailyMetrics: {
+    ordersToday: { type: Number, default: 0 },
+    revenueToday: { type: Number, default: 0 },
+    productsSoldToday: { type: Number, default: 0 }
+  },
+  month: { type: Number },
+  year: { type: Number },
+  periodType: { 
+    type: String, 
+    enum: ['daily', 'weekly', 'monthly', 'yearly'], 
+    default: 'daily' 
+  }
+}, {
+  timestamps: true
 });
+
 
 export const Stats = mongoose.models.Stats || mongoose.model('Stats', statsSchema);
 
-// StockNotification Schema
+// Stock Notification Schema
 const stockNotificationSchema = new mongoose.Schema({
-  productName: { type: String, required: true },
-  notificationType: { type: String, required: true },
-  currentStock: { type: Number, required: true },
-  minStock: { type: Number, required: true },
-  message: { type: String, default: '' },
-  sentBy: { type: String, default: 'system' },
-  priority: { type: String, default: 'medium' },
-  actionTaken: { type: String, default: 'pending' },
-  createdAt: { type: Date, default: Date.now }
+  productId: { 
+    type: mongoose.Schema.Types.ObjectId, 
+    ref: 'Product' 
+  },
+  productName: { 
+    type: String, 
+    required: true 
+  },
+  notificationType: { 
+    type: String, 
+    required: true 
+  },
+  currentStock: { 
+    type: Number, 
+    required: true 
+  },
+  minStock: { 
+    type: Number, 
+    required: true 
+  },
+  message: { 
+    type: String, 
+    default: '' 
+  },
+  sentBy: { 
+    type: String, 
+    default: 'system' 
+  },
+  priority: { 
+    type: String, 
+    default: 'medium' 
+  },
+  actionTaken: { 
+    type: String, 
+    default: 'pending' 
+  }
+}, {
+  timestamps: true
 });
 
 export const StockNotification = mongoose.models.StockNotification || 
@@ -369,16 +459,20 @@ export const StockNotification = mongoose.models.StockNotification ||
 
 // Customer Schema
 const customerSchema = new mongoose.Schema({
-  customerId: { type: String, required: true, unique: true, index: true },
+  customerId: { 
+    type: String, 
+    required: true, 
+    unique: true 
+  },
   totalOrders: { type: Number, default: 0 },
   totalSpent: { type: Number, default: 0 },
-  lastOrderDate: { type: Date, default: null },
-  createdAt: {
-    type: Date,
-    default: Date.now,
-    index: true
-  }
-}, { timestamps: true });
+  lastOrderDate: { type: Date, default: null }
+}, { 
+  timestamps: true 
+});
+
+// Index declaration
+customerSchema.index({ createdAt: 1 });
 
 export const Customer = mongoose.models.Customer || mongoose.model("Customer", customerSchema);
 
@@ -394,9 +488,9 @@ const stockRequestSchema = new mongoose.Schema({
     ref: 'Product',
     required: false
   },
-  inventoryItemId: {
+  MenuItem: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'InventoryItem',
+    ref: 'Menuitem',
     required: false
   },
   requestedQuantity: {
@@ -446,11 +540,5 @@ const stockRequestSchema = new mongoose.Schema({
 }, {
   timestamps: true
 });
-
-// Index for faster queries
-stockRequestSchema.index({ productName: 1, status: 1 });
-stockRequestSchema.index({ requestedBy: 1, createdAt: -1 });
-stockRequestSchema.index({ status: 1, priority: 1 });
-stockRequestSchema.index({ createdAt: -1 });
 
 export const StockRequest = mongoose.models.StockRequest || mongoose.model('StockRequest', stockRequestSchema);

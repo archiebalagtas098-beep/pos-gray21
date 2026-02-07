@@ -108,8 +108,5 @@ const dailySalesSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Index for efficient queries
-dailySalesSchema.index({ date: -1 });
-dailySalesSchema.index({ dateKey: 1 });
 
 export const DailySales = mongoose.model("DailySales", dailySalesSchema);

@@ -648,7 +648,7 @@ const categoryToPOSMapping = {
 };
 
 // ==================== GLOBAL VARIABLES ====================
-let allInventoryItems = [];
+let allInventoryItems = []; // Empty array - no sample data
 let currentSection = 'dashboard';
 let currentCategory = 'all';
 let isModalOpen = false;
@@ -681,6 +681,7 @@ const elements = {
     bulkOrder: document.getElementById('bulkOrder'),
     syncAllBtn: document.getElementById('syncAllBtn'),
     showMappingsBtn: document.getElementById('showMappingsBtn'),
+    clearAllDataBtn: document.getElementById('clearAllDataBtn'),
     
     // Grid containers
     inventoryGrid: document.getElementById('inventoryGrid'),
@@ -762,6 +763,134 @@ function getStockStatusClass(item) {
     if (isOutOfStock(item)) return 'out-of-stock';
     if (isLowStock(item)) return 'low-stock';
     return 'in-stock';
+}
+
+// ==================== DATA CLEANUP FUNCTIONS ====================
+async function clearAllInventoryData() {
+    try {
+        const confirmation = confirm('⚠️ WARNING: This will PERMANENTLY DELETE ALL inventory data and start fresh from 0. This action cannot be undone. Are you absolutely sure?');
+        if (!confirmation) return;
+
+        showLoading('Clearing all inventory data...');
+
+        // Fetch all current inventory items
+        const response = await fetch('/api/inventory', {
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include'
+        });
+
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.message || 'Failed to fetch inventory items');
+        }
+
+        if (data.success && data.data.length > 0) {
+            // Delete each item one by one
+            for (const item of data.data) {
+                try {
+                    const deleteResponse = await fetch(`/api/inventory/${item._id}`, {
+                        method: 'DELETE',
+                        headers: { 'Content-Type': 'application/json' },
+                        credentials: 'include'
+                    });
+
+                    const deleteData = await deleteResponse.json();
+                    
+                    if (!deleteResponse.ok) {
+                        console.warn(`Failed to delete item ${item.itemName}:`, deleteData.message);
+                    }
+                } catch (error) {
+                    console.warn(`Error deleting item ${item.itemName}:`, error);
+                }
+            }
+
+            // Clear local data
+            allInventoryItems = [];
+            
+            // Update UI
+            renderInventoryGrid();
+            renderDashboardGrid();
+            renderRestockGrid();
+            updateDashboardStats();
+            updateCategoryCounts();
+            
+            showToast('✅ All inventory data has been cleared! System is now empty.', 'success');
+        } else {
+            showToast('Inventory is already empty.', 'info');
+        }
+    } catch (error) {
+        console.error('Error clearing inventory data:', error);
+        showToast('Failed to clear inventory data: ' + error.message, 'error');
+    } finally {
+        hideLoading();
+    }
+}
+
+async function removeAllSampleData() {
+    try {
+        const confirmation = confirm('⚠️ This will remove all sample/test/demo items. Continue?');
+        if (!confirmation) return;
+
+        showLoading('Removing sample data...');
+
+        const response = await fetch('/api/inventory', {
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include'
+        });
+
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.message || 'Failed to fetch inventory items');
+        }
+
+        if (data.success) {
+            const sampleItems = data.data.filter(item => {
+                const name = item.itemName.toLowerCase();
+                return name.includes('sample') || 
+                       name.includes('test') || 
+                       name.includes('demo') ||
+                       item.itemType !== 'raw';
+            });
+
+            if (sampleItems.length === 0) {
+                showToast('No sample data found.', 'info');
+                return;
+            }
+
+            let deletedCount = 0;
+            for (const item of sampleItems) {
+                try {
+                    const deleteResponse = await fetch(`/api/inventory/${item._id}`, {
+                        method: 'DELETE',
+                        headers: { 'Content-Type': 'application/json' },
+                        credentials: 'include'
+                    });
+
+                    const deleteData = await deleteResponse.json();
+                    
+                    if (deleteResponse.ok && deleteData.success) {
+                        deletedCount++;
+                    }
+                } catch (error) {
+                    console.warn(`Error deleting sample item ${item.itemName}:`, error);
+                }
+            }
+
+            // Refresh data
+            await fetchInventoryItems();
+            
+            showToast(`✅ Removed ${deletedCount} sample items.`, 'success');
+        }
+    } catch (error) {
+        console.error('Error removing sample data:', error);
+        showToast('Failed to remove sample data', 'error');
+    } finally {
+        hideLoading();
+    }
 }
 
 // ==================== LOADING FUNCTIONS ====================
@@ -1215,10 +1344,10 @@ async function fetchInventoryItems() {
         if (!response.ok) throw new Error(data.message || 'Failed to fetch inventory items');
         
         if (data.success) {
-            // Filter out any sample data
+            // Filter out any sample data and non-raw items
             allInventoryItems = data.data
                 .filter(item => {
-                    // Check if item looks like sample data
+                    // Remove sample/test/demo items
                     const isSample = 
                         item.itemName.toLowerCase().includes('sample') ||
                         item.itemName.toLowerCase().includes('test') ||
@@ -1240,18 +1369,23 @@ async function fetchInventoryItems() {
             await fetchMappingStatus();
             renderInventoryGrid();
             renderDashboardGrid();
-            renderRestockGrid(); // IMPORTANT: This was missing!
+            renderRestockGrid();
             updateCategoryCounts();
             updateDashboardStats();
             
-            showToast('Inventory data loaded successfully');
+            // Show message if empty
+            if (allInventoryItems.length === 0) {
+                showToast('Inventory is empty. Start by adding your first ingredient!', 'info');
+            } else {
+                showToast('Inventory data loaded successfully');
+            }
         } else {
             throw new Error(data.message);
         }
     } catch (error) {
         console.error('Error fetching inventory items:', error);
         showToast('Failed to load inventory items', 'error');
-        allInventoryItems = [];
+        allInventoryItems = []; // Empty array
         renderInventoryGrid();
         renderDashboardGrid();
         renderRestockGrid();
@@ -1491,8 +1625,8 @@ function renderInventoryGrid() {
             <div class="empty-state">
                 <div class="empty-state-icon">📦</div>
                 <h3>No inventory items found</h3>
-                <p>${currentCategory !== 'all' ? `No items in ${getCategoryLabel(currentCategory)} category` : 'Add items to see them listed here'}</p>
-                ${currentCategory !== 'all' ? '<button onclick="openAddModal()" class="btn btn-primary mt-3">Add New Item</button>' : ''}
+                <p>${currentCategory !== 'all' ? `No items in ${getCategoryLabel(currentCategory)} category` : 'Your inventory is empty. Start by adding your first ingredient!'}</p>
+                <button onclick="openAddModal()" class="btn btn-primary mt-3">➕ Add New Item</button>
             </div>
         `;
         return;
@@ -1576,6 +1710,18 @@ function renderDashboardGrid() {
     
     const rawItems = allInventoryItems.filter(item => item.itemType === 'raw');
     
+    if (rawItems.length === 0) {
+        elements.dashboardGrid.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-state-icon">📊</div>
+                <h3>Dashboard is Empty</h3>
+                <p>Start by adding your first inventory item to see dashboard statistics</p>
+                <button onclick="openAddModal()" class="btn btn-primary mt-3">➕ Add First Item</button>
+            </div>
+        `;
+        return;
+    }
+    
     // Get items that are critical (out of stock or low stock)
     const criticalItems = rawItems.filter(item => {
         const currentStock = parseFloat(item.currentStock) || 0;
@@ -1594,18 +1740,6 @@ function renderDashboardGrid() {
     }
     
     displayItems = displayItems.slice(0, 12);
-    
-    if (displayItems.length === 0) {
-        elements.dashboardGrid.innerHTML = `
-            <div class="empty-state">
-                <div class="empty-state-icon">📊</div>
-                <h3>No inventory data</h3>
-                <p>Add items to see dashboard overview</p>
-                <button onclick="openAddModal()" class="btn btn-primary mt-3">Add New Item</button>
-            </div>
-        `;
-        return;
-    }
     
     const gridHTML = displayItems.map(item => {
         const currentStock = parseFloat(item.currentStock) || 0;
@@ -1657,15 +1791,13 @@ function renderRestockGrid() {
         return currentStock <= minStock; // This includes both out of stock (0) and low stock
     });
     
-    console.log('Items needing restock:', itemsNeedingRestock.length);
-    console.log('All items:', allInventoryItems.length);
-    
     if (itemsNeedingRestock.length === 0) {
         elements.restockGrid.innerHTML = `
             <div class="empty-state">
                 <div class="empty-state-icon">✅</div>
-                <h3>All items are well stocked!</h3>
-                <p>No items need restocking at this time</p>
+                <h3>No items need restocking</h3>
+                <p>${allInventoryItems.length === 0 ? 'Inventory is empty. Add items first.' : 'All items are well stocked!'}</p>
+                ${allInventoryItems.length === 0 ? '<button onclick="openAddModal()" class="btn btn-primary mt-3">➕ Add Items</button>' : ''}
             </div>
         `;
         return;
@@ -2193,677 +2325,7 @@ function handleLogout() {
     });
 }
 
-// ==================== INITIALIZATION ====================
-document.addEventListener('DOMContentLoaded', function() {
-    const navLinks = document.querySelectorAll('.nav-link');
-    const categoryItems = document.querySelectorAll('.category-item');
-    const sectionContents = document.querySelectorAll('.section-content');
-    const addNewItemBtn = document.getElementById('addNewItem');
-    const itemModal = document.getElementById('itemModal');
-    const closeModalBtn = document.getElementById('closeModal');
-    const cancelBtn = document.getElementById('cancelBtn');
-    const saveItemBtn = document.getElementById('saveItemBtn');
-    const itemForm = document.getElementById('itemForm');
-    const itemNameSelect = document.getElementById('itemName');
-    const itemCategorySelect = document.getElementById('itemCategories');
-    const inventoryGrid = document.getElementById('inventoryGrid');
-    const dashboardGrid = document.getElementById('dashboardGrid');
-    const totalItemsEl = document.getElementById('total');
-    const lowStockEl = document.getElementById('lowStock');
-    const outOfStockEl = document.getElementById('outOfStock');
-    const categoryCountEls = document.querySelectorAll('.category-count');
-    
-    let currentSection = 'dashboard';
-    let currentCategory = 'all';
-    let currentEditItemId = null;
-    let inventoryItems = [];
-    
-    init();
-    
-    function init() {
-        loadInventoryStats();
-        loadInventoryItems();
-        updateCategoryCounts();
-        setupEventListeners();
-        setupCategoryIngredientMapping();
-    }
-    
-    function setupEventListeners() {
-        navLinks.forEach(link => {
-            link.addEventListener('click', (e) => {
-                e.preventDefault();
-                const section = link.getAttribute('data-section');
-                showSection(section);
-            });
-        });
-        
-        categoryItems.forEach(item => {
-            item.addEventListener('click', () => {
-                const category = item.getAttribute('data-category');
-                filterByCategory(category);
-            });
-        });
-        
-        if (addNewItemBtn) addNewItemBtn.addEventListener('click', () => openModal('add'));
-        if (closeModalBtn) closeModalBtn.addEventListener('click', closeModal);
-        if (cancelBtn) cancelBtn.addEventListener('click', closeModal);
-        if (saveItemBtn) saveItemBtn.addEventListener('click', saveItem);
-        
-        window.addEventListener('click', (e) => {
-            if (e.target === itemModal) closeModal();
-        });
-        
-        if (itemNameSelect) itemNameSelect.addEventListener('change', autoSelectUnit);
-        if (itemNameSelect && itemCategorySelect) itemNameSelect.addEventListener('change', autoSelectCategory);
-    }
-    
-    function showSection(section) {
-        navLinks.forEach(link => {
-            link.classList.remove('active');
-            if (link.getAttribute('data-section') === section) link.classList.add('active');
-        });
-        
-        sectionContents.forEach(content => {
-            content.classList.remove('active-section');
-            if (content.id === section) content.classList.add('active-section');
-        });
-        
-        currentSection = section;
-        
-        if (section === 'dashboard') loadDashboardItems();
-        else if (section === 'inventory') loadInventoryItems();
-    }
-    
-    function filterByCategory(category) {
-        categoryItems.forEach(item => {
-            item.classList.remove('active');
-            if (item.getAttribute('data-category') === category) item.classList.add('active');
-        });
-        
-        currentCategory = category;
-        renderInventoryItems();
-    }
-    
-    function loadInventoryStats() {
-        fetch('/api/inventory/stats')
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) updateStatsDisplay(data.data);
-                else showToast('Error loading inventory stats', 'error');
-            })
-            .catch(error => {
-                console.error('Error loading stats:', error);
-                showToast('Error loading inventory stats', 'error');
-            });
-    }
-    
-    function updateStatsDisplay(stats) {
-        if (totalItemsEl) totalItemsEl.textContent = stats.totalItems || 0;
-        if (lowStockEl) lowStockEl.textContent = stats.lowStock || 0;
-        if (outOfStockEl) outOfStockEl.textContent = stats.outOfStock || 0;
-    }
-    
-    function updateCategoryCounts() {
-        fetch('/api/inventory/category-counts')
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    const counts = data.data;
-                    
-                    categoryCountEls.forEach(el => {
-                        const category = el.parentElement.getAttribute('data-category');
-                        if (category && counts[category] !== undefined) el.textContent = counts[category];
-                    });
-                    
-                    const allCount = Object.values(counts).reduce((a, b) => a + b, 0);
-                    const allCategory = document.querySelector('.category-item[data-category="all"] .category-count');
-                    if (allCategory) allCategory.textContent = allCount;
-                }
-            })
-            .catch(error => console.error('Error loading category counts:', error));
-    }
-    
-    function loadInventoryItems() {
-        fetch('/api/inventory')
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    inventoryItems = data.data;
-                    renderInventoryItems();
-                } else showToast('Error loading inventory items', 'error');
-            })
-            .catch(error => {
-                console.error('Error loading inventory:', error);
-                showToast('Error loading inventory items', 'error');
-            });
-    }
-    
-    function loadDashboardItems() {
-        fetch('/api/inventory/needs-restock')
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) renderDashboardItems(data.data);
-            })
-            .catch(error => console.error('Error loading dashboard items:', error));
-    }
-    
-    function renderInventoryItems() {
-        if (!inventoryGrid) return;
-        
-        let filteredItems = [...inventoryItems];
-        
-        if (currentCategory !== 'all') {
-            const categoryMap = {
-                'meat': 'Meat',
-                'seafood': 'Seafood',
-                'dairy': 'Dairy',
-                'produce': 'Produce',
-                'dry': 'Dry Goods',
-                'beverage': 'Beverages',
-                'packaging': 'Packaging'
-            };
-            
-            const backendCategory = categoryMap[currentCategory];
-            if (backendCategory) filteredItems = filteredItems.filter(item => item.category === backendCategory);
-        }
-        
-        if (filteredItems.length === 0) {
-            inventoryGrid.innerHTML = `
-                <div class="empty-state">
-                    <div class="empty-icon">No Items</div>
-                    <h3>No inventory items found</h3>
-                    <p>${currentCategory === 'all' ? 'Add your first raw ingredient to get started' : 'No items in this category'}</p>
-                    <button class="btn btn-primary" onclick="document.getElementById('addNewItem').click()">
-                        Add New Ingredient
-                    </button>
-                </div>
-            `;
-            return;
-        }
-        
-        inventoryGrid.innerHTML = filteredItems.map(item => `
-            <div class="inventory-item ${item.currentStock === 0 ? 'out-of-stock' : item.currentStock < (item.minStock || 10) ? 'low-stock' : ''}">
-                <div class="item-header">
-                    <div class="item-title">
-                        <h4>${item.itemName}</h4>
-                        <span class="item-category">${item.category}</span>
-                    </div>
-                    <div class="item-actions">
-                        <button class="btn-icon edit-btn" data-id="${item._id}" title="Edit">Edit</button>
-                    </div>
-                </div>
-                
-                <div class="item-stats">
-                    <div class="stat">
-                        <span class="stat-label">Current Stock:</span>
-                        <span class="stat-value ${item.currentStock === 0 ? 'critical' : item.currentStock < (item.minStock || 10) ? 'warning' : ''}">
-                            ${item.currentStock} ${item.unit || 'unit'}
-                        </span>
-                    </div>
-                    <div class="stat">
-                        <span class="stat-label">Min Stock:</span>
-                        <span class="stat-value">${item.minStock || 10} ${item.unit || 'unit'}</span>
-                    </div>
-                    <div class="stat">
-                        <span class="stat-label">Status:</span>
-                        <span class="status-badge ${item.currentStock === 0 ? 'critical' : item.currentStock < (item.minStock || 10) ? 'warning' : 'success'}">
-                            ${item.currentStock === 0 ? 'Out of Stock' : item.currentStock < (item.minStock || 10) ? 'Low Stock' : 'In Stock'}
-                        </span>
-                    </div>
-                </div>
-                
-                <div class="item-actions-full">
-                    <button class="btn btn-sm btn-restock" data-id="${item._id}">Restock</button>
-                </div>
-            </div>
-        `).join('');
-        
-        attachItemEventListeners();
-    }
-    
-    function renderDashboardItems(items) {
-        if (!dashboardGrid || !items) return;
-        
-        if (items.length === 0) {
-            dashboardGrid.innerHTML = `
-                <div class="empty-state">
-                    <div class="empty-icon">All Good</div>
-                    <h3>All stock levels are good</h3>
-                    <p>No items need restocking at this time</p>
-                </div>
-            `;
-            return;
-        }
-        
-        dashboardGrid.innerHTML = items.map(item => `
-            <div class="dashboard-item ${item.currentStock === 0 ? 'critical' : 'warning'}">
-                <div class="dashboard-item-header">
-                    <h4>${item.itemName}</h4>
-                    <span class="item-category">${item.category}</span>
-                </div>
-                
-                <div class="dashboard-item-stats">
-                    <div class="stat-row">
-                        <span>Current:</span>
-                        <strong class="${item.currentStock === 0 ? 'critical' : 'warning'}">
-                            ${item.currentStock} ${item.unit || 'unit'}
-                        </strong>
-                    </div>
-                    <div class="stat-row">
-                        <span>Minimum:</span>
-                        <span>${item.minStock || 10} ${item.unit || 'unit'}</span>
-                    </div>
-                </div>
-                
-                <div class="dashboard-item-actions">
-                    <button class="btn btn-sm btn-restock" data-id="${item._id}">Restock Now</button>
-                </div>
-            </div>
-        `).join('');
-        
-        document.querySelectorAll('.dashboard-item .btn-restock').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                const itemId = e.target.getAttribute('data-id');
-                openRestockModal(itemId);
-            });
-        });
-    }
-    
-    function attachItemEventListeners() {
-        document.querySelectorAll('.edit-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                const itemId = e.target.getAttribute('data-id');
-                editItem(itemId);
-            });
-        });
-        
-        document.querySelectorAll('.btn-restock').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                const itemId = e.target.getAttribute('data-id');
-                openRestockModal(itemId);
-            });
-        });
-        
-        document.querySelectorAll('.btn-use').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                const itemId = e.target.getAttribute('data-id');
-                openUseModal(itemId);
-            });
-        });
-        
-        document.querySelectorAll('.btn-view-recipe').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                const itemId = e.target.getAttribute('data-id');
-                viewRecipes(itemId);
-            });
-        });
-    }
-    
-    function openModal(mode, itemId = null) {
-        currentEditItemId = itemId;
-        const modalTitle = document.getElementById('modalTitle');
-        
-        if (mode === 'add') {
-            modalTitle.textContent = 'Add New Raw Ingredient';
-            resetForm();
-        } else if (mode === 'edit') {
-            modalTitle.textContent = 'Edit Raw Ingredient';
-        }
-        
-        itemModal.style.display = 'block';
-    }
-    
-    function closeModal() {
-        itemModal.style.display = 'none';
-        resetForm();
-        currentEditItemId = null;
-    }
-    
-    function resetForm() {
-        if (itemForm) {
-            itemForm.reset();
-            document.getElementById('itemId').value = '';
-            document.getElementById('currentStock').value = 0;
-            document.getElementById('minStock').value = 10;
-            document.getElementById('maxStock').value = 50;
-        }
-    }
-    
-    function editItem(itemId) {
-        fetch(`/api/inventory/${itemId}`)
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    const item = data.data;
-                    populateForm(item);
-                    openModal('edit', itemId);
-                } else showToast('Error loading item data', 'error');
-            })
-            .catch(error => {
-                console.error('Error loading item:', error);
-                showToast('Error loading item data', 'error');
-            });
-    }
-    
-    function populateForm(item) {
-        document.getElementById('itemId').value = item._id;
-        document.getElementById('itemName').value = item.itemName;
-        document.getElementById('itemCategories').value = mapCategoryToFrontend(item.category);
-        document.getElementById('itemTypes').value = item.itemType || 'raw';
-        document.getElementById('itemUnit').value = item.unit || 'kg';
-        document.getElementById('currentStock').value = item.currentStock || 0;
-        document.getElementById('minStock').value = item.minStock || 10;
-        document.getElementById('maxStock').value = item.maxStock || 50;
-    }
-    
-    function mapCategoryToFrontend(backendCategory) {
-        const categoryMap = {
-            'Meat': 'meat',
-            'Seafood': 'seafood',
-            'Dairy': 'dairy',
-            'Produce': 'produce',
-            'Dry Goods': 'dry',
-            'Beverages': 'beverage',
-            'Packaging': 'packaging'
-        };
-        return categoryMap[backendCategory] || '';
-    }
-    
-    function saveItem() {
-        if (!validateForm()) return;
-        
-        const formData = {
-            itemName: document.getElementById('itemName').value,
-            category: mapCategoryToBackend(document.getElementById('itemCategories').value),
-            itemType: document.getElementById('itemTypes').value,
-            unit: document.getElementById('itemUnit').value,
-            currentStock: parseFloat(document.getElementById('currentStock').value),
-            minStock: parseFloat(document.getElementById('minStock').value),
-            maxStock: parseFloat(document.getElementById('maxStock').value),
-            price: 0
-        };
-        
-        const itemId = document.getElementById('itemId').value;
-        const url = itemId ? `/api/inventory/${itemId}` : '/api/inventory';
-        const method = itemId ? 'PUT' : 'POST';
-        
-        fetch(url, {
-            method: method,
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify(formData)
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                showToast(itemId ? 'Ingredient updated successfully' : 'Ingredient added successfully', 'success');
-                closeModal();
-                loadInventoryStats();
-                loadInventoryItems();
-                updateCategoryCounts();
-            } else showToast(data.message || 'Error saving ingredient', 'error');
-        })
-        .catch(error => {
-            console.error('Error saving item:', error);
-            showToast('Error saving ingredient', 'error');
-        });
-    }
-    
-    function mapCategoryToBackend(frontendCategory) {
-        const categoryMap = {
-            'meat': 'Meat',
-            'seafood': 'Seafood',
-            'dairy': 'Dairy',
-            'produce': 'Produce',
-            'dry': 'Dry Goods',
-            'beverage': 'Beverages',
-            'packaging': 'Packaging'
-        };
-        return categoryMap[frontendCategory] || 'Dry Goods';
-    }
-    
-    function validateForm() {
-        const itemName = document.getElementById('itemName').value;
-        const category = document.getElementById('itemCategories').value;
-        const unit = document.getElementById('itemUnit').value;
-        
-        if (!itemName) { showToast('Please select an ingredient name', 'error'); return false; }
-        if (!category) { showToast('Please select a category', 'error'); return false; }
-        if (!unit) { showToast('Please select a unit', 'error'); return false; }
-        
-        return true;
-    }
-    
-    function openRestockModal(itemId) {
-        const quantity = prompt('Enter quantity to restock:', '10');
-        if (!quantity || isNaN(quantity) || parseFloat(quantity) <= 0) {
-            showToast('Please enter a valid quantity', 'error');
-            return;
-        }
-        
-        const notes = prompt('Enter notes (optional):', 'Restocked inventory');
-        
-        fetch(`/api/inventory/${itemId}/restock`, {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({quantity: parseFloat(quantity), notes: notes || ''})
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                showToast('Ingredient restocked successfully', 'success');
-                loadInventoryStats();
-                loadInventoryItems();
-                if (currentSection === 'dashboard') loadDashboardItems();
-            } else showToast(data.message || 'Error restocking ingredient', 'error');
-        })
-        .catch(error => {
-            console.error('Error restocking:', error);
-            showToast('Error restocking ingredient', 'error');
-        });
-    }
-    
-    function openUseModal(itemId) {
-        const quantity = prompt('Enter quantity to use:', '1');
-        if (!quantity || isNaN(quantity) || parseFloat(quantity) <= 0) {
-            showToast('Please enter a valid quantity', 'error');
-            return;
-        }
-        
-        const notes = prompt('Enter notes (optional):', 'Used in production');
-        
-        fetch(`/api/inventory/${itemId}/use`, {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({quantity: parseFloat(quantity), notes: notes || ''})
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                showToast('Ingredient used successfully', 'success');
-                loadInventoryStats();
-                loadInventoryItems();
-                if (currentSection === 'dashboard') loadDashboardItems();
-            } else showToast(data.message || 'Error using ingredient', 'error');
-        })
-        .catch(error => {
-            console.error('Error using ingredient:', error);
-            showToast('Error using ingredient', 'error');
-        });
-    }
-    
-    function viewRecipes(itemId) {
-        const item = inventoryItems.find(i => i._id === itemId);
-        if (!item) { showToast('Item not found', 'error'); return; }
-        
-        fetch(`/api/inventory/${itemId}/recipe-details`)
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) displayRecipeModal(item, data.data);
-                else showToast('No recipes found for this ingredient', 'info');
-            })
-            .catch(error => {
-                console.error('Error loading recipes:', error);
-                showToast('Error loading recipes', 'error');
-            });
-    }
-    
-    function displayRecipeModal(item, recipeData) {
-        const modalHtml = `
-            <div class="recipe-modal" id="recipeModal">
-                <div class="recipe-modal-content">
-                    <div class="recipe-modal-header">
-                        <h3>Recipes using: ${item.itemName}</h3>
-                        <button class="close-btn" onclick="closeRecipeModal()">X</button>
-                    </div>
-                    <div class="recipe-modal-body">
-                        ${recipeData.dishDetails && recipeData.dishDetails.length > 0 ? 
-                            recipeData.dishDetails.map(dish => `
-                                <div class="recipe-dish">
-                                    <h4>${dish.dishName}</h4>
-                                    <div class="recipe-ingredients">
-                                        <strong>Required Ingredients:</strong>
-                                        <ul>
-                                            ${dish.requiredIngredients && dish.requiredIngredients.length > 0 ?
-                                                dish.requiredIngredients.map(ing => `
-                                                    <li class="${ing.available ? 'available' : 'unavailable'}">
-                                                        ${ing.ingredient} - ${ing.currentStock} ${ing.unit}
-                                                        ${ing.available ? 'Available' : 'Unavailable'}
-                                                    </li>
-                                                `).join('') :
-                                                '<li>No specific recipe requirements found</li>'
-                                            }
-                                        </ul>
-                                    </div>
-                                </div>
-                            `).join('') :
-                            '<p>No recipes found for this ingredient.</p>'
-                        }
-                    </div>
-                </div>
-            </div>
-        `;
-        
-        const existingModal = document.getElementById('recipeModal');
-        if (existingModal) existingModal.remove();
-        
-        document.body.insertAdjacentHTML('beforeend', modalHtml);
-        
-        setTimeout(() => {
-            const modal = document.getElementById('recipeModal');
-            if (modal) modal.style.display = 'block';
-        }, 10);
-    }
-    
-    function closeRecipeModal() {
-        const modal = document.getElementById('recipeModal');
-        if (modal) modal.remove();
-    }
-    
-    window.closeRecipeModal = closeRecipeModal;
-    
-    function setupCategoryIngredientMapping() {
-        window.ingredientCategoryMap = {
-            'Chicken': 'meat', 'Pork slices': 'meat', 'Pork belly': 'meat', 'Ground pork': 'meat',
-            'Bagnet': 'meat', 'Pork ribs': 'meat', 'Pork face & ears': 'meat', 'Liver': 'meat',
-            'Pork chop': 'meat', 'Hotdogs': 'meat', 'Bacon': 'meat', 'Ham': 'meat', 'Beef shanks and marrow': 'meat',
-            'Cream dory fillet': 'seafood', 'Shrimp': 'seafood', 'Smoked fish (tinapa)': 'seafood', 'Dried fish (tuyo)': 'seafood',
-            'Butter': 'dairy', 'Eggs': 'dairy', 'Milk': 'dairy', 'Cheese': 'dairy', 'Grated cheese': 'dairy',
-            'Mayonnaise': 'dairy', 'Whipped cream': 'dairy', 'Cream cheese': 'dairy', 'Non-dairy creamer': 'dairy', 'Sour cream': 'dairy',
-            'Garlic': 'produce', 'Onion': 'produce', 'Green onions': 'produce', 'Carrots': 'produce', 'Cabbage': 'produce',
-            'Tomato': 'produce', 'Eggplant': 'produce', 'Cucumber': 'produce', 'Lettuce': 'produce', 'Celery': 'produce',
-            'Green beans': 'produce', 'Spring onions': 'produce', 'Chili peppers': 'produce', 'Long green chili (siling haba)': 'produce',
-            'Jalapeños': 'produce', 'Potato strips': 'produce', 'Corn on the cob': 'produce', 'Ginger': 'produce',
-            'Calamansi': 'produce', 'Lemon': 'produce', 'Mint': 'produce', 'Kangkong (water spinach)': 'produce',
-            'Radish': 'produce', 'Sitaw (long beans)': 'produce', 'Okra': 'produce', 'Bitter melon (ampalaya)': 'produce',
-            'Squash': 'produce', 'Pechay (bok choy)': 'produce', 'Basil or malunggay leaves': 'produce', 'Mixed vegetables (peas, carrots)': 'produce',
-            'Soy sauce': 'dry', 'Brown sugar': 'dry', 'Gochujang (Korean chili paste)': 'dry', 'Sesame oil': 'dry',
-            'Sesame seeds': 'dry', 'Salt': 'dry', 'Black pepper': 'dry', 'Whole peppercorns': 'dry', 'Cornstarch': 'dry',
-            'Cooking oil': 'dry', 'Flour': 'dry', 'Breadcrumbs': 'dry', 'Honey': 'dry', 'Chili flakes or hot sauce': 'dry',
-            'Vinegar': 'dry', 'Lumpia wrapper': 'dry', 'Bihon/canton noodles': 'dry', 'Spaghetti noodles': 'dry',
-            'Oyster sauce': 'dry', 'Banana ketchup': 'dry', 'Tomato sauce': 'dry', 'Sugar': 'dry', 'Blue curaçao syrup': 'dry',
-            'Raspberry/red fruit tea powder': 'dry', 'Espresso': 'dry', 'Vanilla syrup': 'dry', 'Caramel drizzle': 'dry',
-            'Black tea leaves/powder': 'dry', 'Matcha powder': 'dry', 'Tapioca pearls (sago)': 'dry', 'Sugar syrup': 'dry',
-            'Chocolate cookies (Oreo)': 'dry', 'Strawberry syrup': 'dry', 'Mango syrup/puree': 'dry', 'Graham crumbs': 'dry',
-            'Tortilla chips': 'dry', 'Cheese sauce': 'dry', 'Salsa': 'dry', 'Tartar sauce': 'dry', 'Bread': 'dry',
-            'Nuts (pili or cashew)': 'dry', 'Olive oil': 'dry', 'Jasmine rice': 'dry', 'Tamarind (sampaloc)': 'dry',
-            'Bagoong (fermented shrimp paste)': 'dry', 'Fish sauce (patis)': 'dry', 'Bay leaves': 'dry', 'Ice': 'dry', 'Water': 'dry',
-            'Sprite/7-Up': 'beverage', 'Branded soda (Coke, Sprite, Royal)': 'beverage',
-            'Paper cups': 'packaging', 'Straws': 'packaging', 'Food containers': 'packaging', 'Plastic utensils': 'packaging', 'Napkins': 'packaging'
-        };
-        
-        window.ingredientUnitMap = {
-            'kg': ['Chicken', 'Pork slices', 'Pork belly', 'Ground pork', 'Beef shanks and marrow', 'Cream dory fillet', 'Shrimp', 'Carrots', 'Potato strips', 'Butter', 'Cheese', 'Garlic', 'Onion', 'Flour', 'Sugar', 'Jasmine rice'],
-            'liter': ['Soy sauce', 'Cooking oil', 'Milk', 'Vinegar', 'Water', 'Blue curaçao syrup', 'Strawberry syrup', 'Mango syrup/puree'],
-            'pcs': ['Eggs', 'Cabbage', 'Tomato', 'Cucumber', 'Lettuce', 'Eggplant', 'Corn on the cob', 'Lemon', 'Paper cups', 'Straws', 'Food containers', 'Plastic utensils', 'Napkins'],
-            'pack': ['Hotdogs', 'Bacon', 'Ham', 'Lumpia wrapper', 'Tortilla chips', 'Bread'],
-            'bottle': ['Sprite/7-Up', 'Branded soda (Coke, Sprite, Royal)'],
-            'bunch': ['Green onions', 'Celery', 'Green beans', 'Spring onions', 'Kangkong (water spinach)', 'Sitaw (long beans)', 'Basil or malunggay leaves', 'Mint']
-        };
-    }
-    
-    function autoSelectCategory() {
-        if (!itemNameSelect || !itemCategorySelect) return;
-        
-        const selectedIngredient = itemNameSelect.value;
-        if (selectedIngredient && window.ingredientCategoryMap) {
-            const category = window.ingredientCategoryMap[selectedIngredient];
-            if (category) itemCategorySelect.value = category;
-        }
-    }
-    
-    function autoSelectUnit() {
-        if (!itemNameSelect || !document.getElementById('itemUnit')) return;
-        
-        const selectedIngredient = itemNameSelect.value;
-        const unitSelect = document.getElementById('itemUnit');
-        
-        if (selectedIngredient && window.ingredientUnitMap) {
-            for (const [unit, ingredients] of Object.entries(window.ingredientUnitMap)) {
-                if (ingredients.includes(selectedIngredient)) {
-                    unitSelect.value = unit;
-                    return;
-                }
-            }
-        }
-        
-        unitSelect.value = 'kg';
-    }
-    
-    function showToast(message, type = 'info') {
-        const existingToasts = document.querySelectorAll('.toast');
-        existingToasts.forEach(toast => {
-            if (toast.parentNode) toast.parentNode.removeChild(toast);
-        });
-        
-        const toast = document.createElement('div');
-        toast.className = `toast ${type}`;
-        toast.innerHTML = `
-            <span class="toast-icon">${type === 'success' ? 'OK' : type === 'error' ? 'Error' : 'Info'}</span>
-            <span class="toast-message">${message}</span>
-        `;
-        
-        const container = document.getElementById('toastContainer') || document.body;
-        container.appendChild(toast);
-        
-        setTimeout(() => toast.classList.add('show'), 10);
-        setTimeout(() => {
-            toast.classList.remove('show');
-            setTimeout(() => {
-                if (toast.parentNode) toast.parentNode.removeChild(toast);
-            }, 300);
-        }, 3000);
-    }
-    
-    window.handleLogout = function() {
-        fetch('/logout', {method: 'GET'})
-        .then(() => window.location.href = '/login')
-        .catch(error => {
-            console.error('Logout error:', error);
-            window.location.href = '/login';
-        });
-    };
-});
-
+// ==================== EVENT LISTENERS ====================
 function initializeEventListeners() {
     // Button event listeners
     if (elements.addNewItem) elements.addNewItem.addEventListener('click', openAddModal);
@@ -2878,6 +2340,7 @@ function initializeEventListeners() {
     if (elements.bulkOrder) elements.bulkOrder.addEventListener('click', createBulkOrder);
     if (elements.syncAllBtn) elements.syncAllBtn.addEventListener('click', syncAllItems);
     if (elements.showMappingsBtn) elements.showMappingsBtn.addEventListener('click', showMappings);
+    if (elements.clearAllDataBtn) elements.clearAllDataBtn.addEventListener('click', clearAllInventoryData);
     
     // Form field event listeners
     if (elements.itemName) {
@@ -2932,6 +2395,18 @@ function initializeEventListeners() {
     });
 }
 
+// ==================== INITIALIZATION ====================
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialize the application with empty state
+    allInventoryItems = []; // Start with empty array
+    
+    initializeEventListeners();
+    
+    // Load data from server
+    fetchInventoryItems();
+    updateDashboardStats();
+});
+
 // ==================== GLOBAL FUNCTION EXPORTS ====================
 window.handleLogout = handleLogout;
 window.openAddModal = openAddModal;
@@ -2944,10 +2419,5 @@ window.syncSingleItem = syncSingleItem;
 window.filterByCategory = filterByCategory;
 window.showSection = showSection;
 window.submitRestock = submitRestock;
-
-// Initialize when page loads
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initializeEventListeners);
-} else {
-    initializeEventListeners();
-}
+window.clearAllInventoryData = clearAllInventoryData;
+window.removeAllSampleData = removeAllSampleData;
