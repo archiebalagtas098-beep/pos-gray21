@@ -73,18 +73,20 @@ async function fetchApi(endpoint, options = {}) {
         clearTimeout(timeoutId);
         
         if (!response.ok) {
-            console.warn(`⚠️ API ${endpoint} returned ${response.status}`);
+            console.error(`❌ API ${endpoint} returned ${response.status} ${response.statusText}`);
+            const errorText = await response.text();
+            console.error(`Error response: ${errorText}`);
             return null;
         }
         
         const data = await response.json();
-        console.log(`✅ API ${endpoint} response received`);
+        console.log(`✅ API ${endpoint} response received:`, data);
         return data;
     } catch (error) {
         if (error.name === 'AbortError') {
             console.warn(`⏰ Timeout fetching ${endpoint}`);
         } else {
-            console.warn(`⚠️ Error fetching ${endpoint}:`, error.message);
+            console.error(`❌ Error fetching ${endpoint}:`, error.message, error);
         }
         return null;
     }
@@ -95,7 +97,24 @@ async function fetchAllData() {
     console.log('📊 Fetching all dashboard data...');
     
     try {
-        // Fetch all data in parallel for better performance
+        // 1. First fetch the pre-calculated stats from the backend
+        console.log('🔹 Step 1: Fetching stats from /api/stats');
+        const statsData = await fetchApi('/api/stats');
+        
+        if (statsData && statsData.success && statsData.data) {
+            console.log('✅ Stats fetched successfully from backend:', {
+                totalOrders: statsData.data.totalOrders,
+                totalRevenue: statsData.data.totalRevenue,
+                todaysOrders: statsData.data.todaysOrders,
+                todaysRevenue: statsData.data.todaysRevenue
+            });
+            dashboardStats = statsData.data;
+        } else {
+            console.warn('⚠️ Failed to fetch stats from backend:', statsData);
+        }
+        
+        // 2. Fetch detailed data for tables (in parallel) - always do this for table display
+        console.log('🔹 Step 2: Fetching detailed data for tables');
         const [ordersData, menuData, inventoryData, customersData] = await Promise.allSettled([
             fetchOrdersData(),
             fetchMenuData(),
@@ -113,16 +132,26 @@ async function fetchAllData() {
             orders: allOrders.length,
             menuItems: allMenuItems.length,
             inventory: allInventory.length,
-            customers: allCustomers.length
+            customers: allCustomers.length,
+            statsExists: Object.keys(dashboardStats).length > 0
         });
         
-        // Calculate all statistics from the fetched data
-        calculateAllStatistics();
+        // Only calculate stats locally if backend stats failed
+        if (!statsData || !statsData.success) {
+            console.log('🔹 Step 3: Calculating stats locally (backend failed)');
+            calculateAllStatistics();
+        }
         
         // Update all UI components
         updateAllUIComponents();
         
         console.log('✅ All data fetched and processed');
+        console.log('📊 Final dashboard stats:', {
+            totalOrders: dashboardStats.totalOrders,
+            totalRevenue: dashboardStats.totalRevenue,
+            todaysOrders: dashboardStats.todaysOrders,
+            todaysRevenue: dashboardStats.todaysRevenue
+        });
         
     } catch (error) {
         console.error('❌ Error fetching all data:', error);
@@ -137,6 +166,7 @@ async function fetchOrdersData() {
     // Try multiple endpoints
     const endpoints = [
         '/api/orders?limit=1000',
+        '/api/orders?page=1&limit=1000',
         '/api/orders/recent',
         '/api/transactions',
         '/api/sales/orders'
@@ -176,39 +206,53 @@ function extractOrdersFromResponse(data) {
     }
     
     // Normalize order structure
-    return orders.map((order, index) => ({
-        id: order._id || order.id || `order-${Date.now()}-${index}`,
-        orderNumber: order.orderNumber || order.transactionId || `ORD-${String(index + 1).padStart(4, '0')}`,
-        customerId: order.customerId || order.customer || `CUST-${index + 1}`,
-        customerName: order.customerName || order.customer || 'Walk-in Customer',
-        totalAmount: parseFloat(order.totalAmount || order.total || order.amount || 0),
-        items: order.items || order.products || [],
-        status: order.status || 'completed',
-        paymentMethod: order.paymentMethod || 'cash',
-        createdAt: order.createdAt || order.date || new Date().toISOString(),
-        updatedAt: order.updatedAt || order.createdAt
-    }));
+    return orders.map((order, index) => {
+        // Handle payment object structure
+        const payment = order.payment || {};
+        const totalAmount = order.totalAmount || order.total || order.amount || 0;
+        const paymentMethod = payment.method || order.paymentMethod || 'cash';
+        
+        return {
+            id: order._id || order.id || `order-${Date.now()}-${index}`,
+            orderNumber: order.orderNumber || order.transactionId || `ORD-${String(index + 1).padStart(4, '0')}`,
+            customerId: order.customerId || order.customer || `CUST-${index + 1}`,
+            customerName: order.customerName || order.customer || 'Walk-in Customer',
+            totalAmount: parseFloat(totalAmount),
+            items: (order.items || order.products || []).map(item => ({
+                name: item.name || item.itemName || 'Unknown Product',
+                itemName: item.itemName || item.name || 'Unknown Product',
+                quantity: parseInt(item.quantity) || 1,
+                price: parseFloat(item.price) || 0
+            })),
+            status: order.status || 'completed',
+            paymentMethod: paymentMethod,
+            createdAt: order.createdAt || order.date || new Date().toISOString(),
+            updatedAt: order.updatedAt || order.createdAt
+        };
+    });
 }
 
 async function fetchMenuData() {
     console.log('🍽️ Fetching menu items...');
     
     try {
+        // Try /api/menu first
         const data = await fetchApi('/api/menu');
-        if (data && data.success && data.data) {
-            console.log(`✅ Menu items loaded: ${data.data.length}`);
-            return data.data;
-        }
-        
-        // Try alternative endpoint
-        const altData = await fetchApi('/api/products');
-        if (altData && altData.success && altData.data) {
-            console.log(`✅ Menu items loaded from products: ${altData.data.length}`);
-            return altData.data;
+        if (data && data.success && data.data && data.data.length > 0) {
+            console.log(`✅ Menu items loaded from /api/menu: ${data.data.length}`);
+            return data.data.map(item => ({
+                _id: item._id || item.id,
+                itemName: item.itemName || item.name || 'Unknown',
+                name: item.itemName || item.name || 'Unknown',
+                stock: item.stock || 0,
+                category: item.category || 'General',
+                price: item.price || 0,
+                status: item.status || 'available'
+            }));
         }
         
     } catch (error) {
-        console.warn('⚠️ Failed to fetch menu items:', error.message);
+        console.warn('⚠️ Failed to fetch from /api/menu:', error.message);
     }
     
     console.log('ℹ️ No menu data available');
@@ -220,18 +264,27 @@ async function fetchInventoryData() {
     
     try {
         const data = await fetchApi('/api/inventory');
-        if (data && data.success && data.data) {
+        if (data && data.success && data.data && data.data.length > 0) {
             console.log(`✅ Inventory loaded: ${data.data.length}`);
-            return data.data;
+            return data.data.map(item => ({
+                _id: item._id || item.id,
+                name: item.itemName || item.name || 'Unknown',
+                itemName: item.itemName || item.name || 'Unknown',
+                stock: item.currentStock || item.stock || 0,
+                unit: item.unit || 'pcs',
+                minStock: item.minStock || 5,
+                maxStock: item.maxStock || 100,
+                category: item.category || 'General'
+            }));
         }
         
-        // If no inventory API, use menu items as inventory
-        if (allMenuItems.length > 0) {
-            console.log('🔄 Using menu items as inventory');
+        // If no inventory API or empty, use menu items as fallback
+        if (allMenuItems && allMenuItems.length > 0) {
+            console.log('🔄 Using menu items as inventory fallback');
             return allMenuItems.map(item => ({
                 id: item._id || item.id,
-                name: item.itemName || item.name,
-                stock: item.stock || item.quantity || 0,
+                name: item.itemName || item.name || 'Unknown',
+                stock: item.stock || 0,
                 unit: item.unit || 'pcs',
                 minStock: item.minStock || 5,
                 maxStock: item.maxStock || 100,
@@ -329,7 +382,7 @@ function calculateAllStatistics() {
     
     // 5. Total Revenue (sum of all order totals)
     dashboardStats.totalRevenue = allOrders.reduce((sum, order) => {
-        return sum + (order.totalAmount || 0);
+        return sum + (order.total || order.totalAmount || 0);
     }, 0);
     
     // 6. Today's Orders and Revenue
@@ -347,7 +400,7 @@ function calculateAllStatistics() {
     
     dashboardStats.todaysOrders = todaysOrders.length;
     dashboardStats.todaysRevenue = todaysOrders.reduce((sum, order) => {
-        return sum + (order.totalAmount || 0);
+        return sum + (order.total || order.totalAmount || 0);
     }, 0);
     
     // 7. Inventory Status
@@ -440,10 +493,11 @@ function updateAllUIComponents() {
 
 function updateDashboardStats() {
     console.log('📊 Updating dashboard stats display...');
+    console.log('Current dashboardStats object:', dashboardStats);
     
     const elements = {
         'totalOrders': dashboardStats.totalOrders,
-        'totalProducts': dashboardStats.totalProducts,
+        'totalProducts': dashboardStats.totalInventoryItems || dashboardStats.totalProducts,
         'totalCustomers': dashboardStats.totalCustomers,
         'totalRevenue': dashboardStats.totalRevenue,
         'totalMenuItems': dashboardStats.totalMenuItems,
@@ -451,10 +505,13 @@ function updateDashboardStats() {
         'todaysRevenue': dashboardStats.todaysRevenue
     };
     
+    console.log('📋 Elements to update:', elements);
+    
     Object.entries(elements).forEach(([id, value]) => {
         const element = document.getElementById(id);
         if (element) {
             const formattedValue = id.includes('Revenue') ? formatCurrency(value) : formatNumber(value);
+            console.log(`✏️ Updating ${id}: ${value} -> ${formattedValue}`);
             element.textContent = formattedValue;
             
             // Add animation for updated values
@@ -462,8 +519,12 @@ function updateDashboardStats() {
                 element.classList.add('value-updated');
                 setTimeout(() => element.classList.remove('value-updated'), 1000);
             }
+        } else {
+            console.warn(`⚠️ Element not found: ${id}`);
         }
     });
+    
+    console.log('✅ Dashboard stats updated');
 }
 
 function updateTodaysOrdersTable() {
@@ -693,16 +754,21 @@ async function initializeDashboard() {
         // 2. Show loading state
         showLoadingState();
         
-        // 3. Set up event listeners
+        // 3. Initialize stats from server-rendered HTML
+        console.log('🔹 Reading stats from server-rendered HTML');
+        initializeStatsFromHTML();
+        
+        // 4. Set up event listeners
         setupEventListeners();
         
-        // 4. Fetch all data
+        // 5. Fetch all data (this will update stats if needed)
         await fetchAllData();
         
-        // 5. Set up auto-refresh
+        // 6. Set up auto-refresh
         setupAutoRefresh();
         
         console.log('✅ Dashboard initialization complete');
+        console.log('📊 Final stats:', dashboardStats);
         
     } catch (error) {
         console.error('❌ Error during dashboard initialization:', error);
@@ -712,6 +778,38 @@ async function initializeDashboard() {
     } finally {
         // Hide loading state
         hideLoadingState();
+    }
+}
+
+function initializeStatsFromHTML() {
+    // Try to read already-rendered stats from the HTML
+    const totalOrdersEl = document.getElementById('totalOrders');
+    const totalRevenueEl = document.getElementById('totalRevenue');
+    const totalCustomersEl = document.getElementById('totalCustomers');
+    const totalMenuItemsEl = document.getElementById('totalMenuItems');
+    
+    if (totalOrdersEl && totalOrdersEl.textContent && totalOrdersEl.textContent !== '0') {
+        dashboardStats.totalOrders = parseInt(totalOrdersEl.textContent) || 0;
+        console.log(`✅ Loaded totalOrders from HTML: ${dashboardStats.totalOrders}`);
+    }
+    
+    if (totalRevenueEl) {
+        const revenueText = totalRevenueEl.textContent.replace('₱', '').replace(/,/g, '');
+        const revenue = parseFloat(revenueText) || 0;
+        if (revenue > 0) {
+            dashboardStats.totalRevenue = revenue;
+            console.log(`✅ Loaded totalRevenue from HTML: ${dashboardStats.totalRevenue}`);
+        }
+    }
+    
+    if (totalCustomersEl && totalCustomersEl.textContent && totalCustomersEl.textContent !== '0') {
+        dashboardStats.totalCustomers = parseInt(totalCustomersEl.textContent) || 0;
+        console.log(`✅ Loaded totalCustomers from HTML: ${dashboardStats.totalCustomers}`);
+    }
+    
+    if (totalMenuItemsEl && totalMenuItemsEl.textContent && totalMenuItemsEl.textContent !== '0') {
+        dashboardStats.totalMenuItems = parseInt(totalMenuItemsEl.textContent) || 0;
+        console.log(`✅ Loaded totalMenuItems from HTML: ${dashboardStats.totalMenuItems}`);
     }
 }
 

@@ -1,12 +1,8 @@
-const express = require('express');
-
-const Product = require('../../models/productModel');
+import { Product } from '../../config/database.js';
 
 const getDataControllerFn = async (req, res) => {
     try {
-        const products = await Product.find({})
-            .populate('category')
-            .populate('brand');
+        const products = await Product.find({});
         res.json(products);
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -23,4 +19,4 @@ const createProductControllerFn = async (req, res) => {
     }
 };
 
-module.exports = { getDataControllerFn, createProductControllerFn };
+export { getDataControllerFn, createProductControllerFn };

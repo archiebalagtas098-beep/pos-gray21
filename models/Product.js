@@ -23,7 +23,7 @@ const productSchema = new mongoose.Schema(
     },
     stock: {
       type: Number,
-      default: 100,
+      default: 50,
       min: 0
     },
     totalSoldCount: {

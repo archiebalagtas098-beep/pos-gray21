@@ -152,12 +152,6 @@ document.addEventListener('DOMContentLoaded', function() {
     
     console.log('✅ POS System loaded - ALL PRODUCTS WILL BE SHOWN');
     
-    // Auto-refresh menu items every 30 seconds
-    setInterval(() => {
-        console.log('🔄 Auto-refreshing menu items...');
-        loadAllMenuItems();
-    }, 30000);
-    
     // Add stock management buttons
     setTimeout(() => {
         addStockManagementButtons();
@@ -441,16 +435,6 @@ function createProductCard(product) {
         stockClass = 'high-stock';
     }
 
-    // Get real-time stock before showing card (only for in-stock items)
-    if (!isOutOfStock) {
-        getRealTimeStock(product.name).then(realStock => {
-            if (realStock !== null && realStock !== product.stock) {
-                product.stock = realStock;
-                updateStockDisplay(product.name, realStock);
-            }
-        });
-    }
-
     card.innerHTML = `
         <img src="/images/${product.image}" 
              onerror="this.onerror=null; this.src='/images/default_food.jpg';" 
@@ -489,6 +473,38 @@ async function getRealTimeStock(productName) {
         return null;
     } catch (error) {
         return null;
+    }
+}
+
+// Permanently deduct stock from backend
+async function deductStockPermanently(productName, newStock) {
+    try {
+        const response = await fetch(`${BACKEND_URL}/api/inventory/deduct-stock`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            credentials: 'include',
+            body: JSON.stringify({
+                itemName: productName,
+                quantityToDeduct: 50,
+                newStock: newStock
+            })
+        });
+
+        if (!response.ok) {
+            console.warn(`Failed to persist stock deduction for ${productName}`);
+            return;
+        }
+
+        const result = await response.json();
+        if (result.success) {
+            console.log(`Stock permanently deducted for ${productName}: ${newStock}`);
+        } else {
+            console.warn(`Stock deduction failed: ${result.message}`);
+        }
+    } catch (error) {
+        console.error(`Error persisting stock deduction: ${error.message}`);
     }
 }
 
@@ -957,27 +973,13 @@ function closeStockRequestSuccess() {
     }
 }
 
-// Add item to order with real-time stock check
+// Add item to order
 async function addItemToOrder(name, price) {
-    // Get real-time stock first
-    let realStock = null;
-    try {
-        realStock = await getRealTimeStock(name);
-    } catch (error) {
-        console.log('Using local stock:', error.message);
-    }
-    
     const product = productCatalog.find(p => p.name === name);
     
     if (!product) {
         alert('Product Not Found In Menu');
         return;
-    }
-    
-    // Update with real stock if available
-    if (realStock !== null) {
-        product.stock = realStock;
-        updateStockDisplay(name, realStock);
     }
     
     // CHECK IF OUT OF STOCK
@@ -1011,7 +1013,10 @@ async function addItemToOrder(name, price) {
         });
     }
     
-    product.stock--;
+    product.stock = 0;
+    
+    // Persist stock deduction to backend
+    deductStockPermanently(name, product.stock);
     
     // Update display WITHOUT ANIMATION
     updateStockDisplay(name, product.stock);
@@ -1032,6 +1037,8 @@ function removeItemFromOrder(index) {
         const product = productCatalog.find(p => p.name === item.name);
         if (product) {
             product.stock++;
+            // Persist stock increase to backend
+            deductStockPermanently(item.name, product.stock);
             updateStockDisplay(item.name, product.stock);
         }
     } else {
@@ -1039,6 +1046,8 @@ function removeItemFromOrder(index) {
         const product = productCatalog.find(p => p.name === item.name);
         if (product) {
             product.stock += item.quantity;
+            // Persist stock increase to backend
+            deductStockPermanently(item.name, product.stock);
             updateStockDisplay(item.name, product.stock);
         }
         currentOrder.splice(index, 1);
@@ -1447,7 +1456,7 @@ async function completePayment(paymentMethod, total, paid, change, tableNumber) 
     // Prepare order data
     const orderData = {
         items: currentOrder.map(item => ({
-            name: item.name,
+            itemName: item.name || item.itemName,
             price: item.price,
             quantity: item.quantity,
             size: "Regular",
@@ -3200,3 +3209,34 @@ document.addEventListener('click', function(event) {
         closeMyRequestsModal();
     }
 });
+
+// Function to set all stock to 0
+async function setAllStockToZero() {
+    if (!confirm('Are you sure you want to set ALL stock to 0 (out of stock)? This action cannot be undone!')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/stock/set-all-zero', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            alert(`Success! ${data.data.productsUpdated} products and ${data.data.inventoryItemsUpdated} inventory items set to 0.`);
+            loadAllMenuItems(); // Reload menu items
+        } else {
+            alert('Error: ' + data.message);
+        }
+    } catch (error) {
+        console.error('Error setting stock to zero:', error);
+        alert('Error setting stock to zero: ' + error.message);
+    }
+}
+
+// Make function globally accessible
+window.setAllStockToZero = setAllStockToZero;

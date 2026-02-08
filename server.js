@@ -6,7 +6,9 @@ import cookieParser from "cookie-parser";
 import path from "path";
 import { fileURLToPath } from 'url';
 import mongoose from "mongoose";
-import { connectDB, User, Category, InventoryItem, Product, Order, Stats, MenuItem, StockNotification, Customer } from "./config/database.js";
+import { connectDB, User, Category, InventoryItem, Product, Stats, MenuItem, StockNotification, StockRequest } from "./config/database.js";
+import Order from "./models/Order.js";
+import { Customer } from "./models/Customer.js";
 import categoryRoutes from "./routes/categoryroute.js";
 import productRoutes from "./routes/productroute.js";
 import stockRequestRoutes from "./routes/stockrequestroute.js";
@@ -505,6 +507,9 @@ const getDashboardStats = async () => {
         const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0, 0);
         const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999);
         
+        console.log('📊 Calculating dashboard stats...');
+        console.log('Date range:', { startOfDay, endOfDay });
+        
         const [
             totalOrders,
             todaysOrders,
@@ -518,8 +523,7 @@ const getDashboardStats = async () => {
         ] = await Promise.all([
             Order.countDocuments(),
             Order.countDocuments({ 
-                createdAt: { $gte: startOfDay, $lte: endOfDay },
-                status: 'completed'
+                createdAt: { $gte: startOfDay, $lte: endOfDay }
             }),
             Customer.countDocuments(),
             MenuItem.countDocuments({ isActive: true }),
@@ -541,7 +545,7 @@ const getDashboardStats = async () => {
             Order.aggregate([
                 { $unwind: '$items' },
                 { $group: { 
-                    _id: '$items.itemName',
+                    _id: '$items.name',
                     totalQuantity: { $sum: '$items.quantity' },
                     totalRevenue: { $sum: { $multiply: ['$items.price', '$items.quantity'] } }
                 }},
@@ -550,22 +554,30 @@ const getDashboardStats = async () => {
             ])
         ]);
         
+        // Get total revenue from all orders (not just completed)
         const totalRevenueResult = await Order.aggregate([
-            { $match: { status: 'completed' } },
             { $group: { _id: null, total: { $sum: '$total' } } }
         ]);
         const totalRevenue = totalRevenueResult[0]?.total || 0;
         
+        // Get today's revenue
         const todaysRevenueResult = await Order.aggregate([
             { 
                 $match: { 
-                    status: 'completed',
                     createdAt: { $gte: startOfDay, $lte: endOfDay }
                 } 
             },
             { $group: { _id: null, total: { $sum: '$total' } } }
         ]);
         const todaysRevenue = todaysRevenueResult[0]?.total || 0;
+        
+        console.log('✅ Stats calculated:', {
+            totalOrders,
+            todaysOrders,
+            totalRevenue,
+            todaysRevenue,
+            totalCustomers
+        });
         
         return {
             totalOrders,
@@ -582,7 +594,7 @@ const getDashboardStats = async () => {
             topSellingProducts
         };
     } catch (error) {
-        console.error('Error getting dashboard stats:', error);
+        console.error('❌ Error getting dashboard stats:', error);
         return {
             totalOrders: 0,
             todaysOrders: 0,
@@ -872,6 +884,79 @@ app.post("/api/inventory/:id/restock", verifyToken, verifyAdmin, async (req, res
         });
     } catch (error) {
         console.error('Restock error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error'
+        });
+    }
+});
+
+// Deduct stock endpoint for staff ordering (permanent stock deduction)
+app.post("/api/inventory/deduct-stock", verifyToken, async (req, res) => {
+    try {
+        const { itemName, quantityToDeduct, newStock } = req.body;
+        
+        if (!itemName || quantityToDeduct <= 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'Item name and valid quantity are required'
+            });
+        }
+        
+        // Find by itemName and update stock
+        const item = await InventoryItem.findOne({ 
+            itemName: itemName,
+            itemType: 'raw' 
+        });
+        
+        if (!item) {
+            return res.status(404).json({
+                success: false,
+                message: 'Inventory item not found'
+            });
+        }
+        
+        // Check if enough stock
+        if (item.currentStock < quantityToDeduct) {
+            return res.status(400).json({
+                success: false,
+                message: `Insufficient stock. Available: ${item.currentStock}, Requested: ${quantityToDeduct}`
+            });
+        }
+        
+        // Deduct stock permanently
+        item.currentStock -= quantityToDeduct;
+        
+        // Record usage
+        item.usageHistory.push({
+            quantity: quantityToDeduct,
+            notes: 'Deducted from staff order',
+            usedBy: req.user.username || 'Staff'
+        });
+        
+        await item.save();
+        
+        // Check if stock is low and send alert if needed
+        if (item.currentStock > 0 && item.currentStock < (item.minStock || 10)) {
+            sendLowStockAlert(item);
+        }
+        
+        // Update related menu items
+        await checkAffectedMenuItems(itemName);
+        
+        // Send stats update
+        await sendStatsUpdate();
+        
+        res.json({
+            success: true,
+            message: 'Stock deducted successfully',
+            data: {
+                itemName: item.itemName,
+                remainingStock: item.currentStock
+            }
+        });
+    } catch (error) {
+        console.error('Stock deduction error:', error);
         res.status(500).json({
             success: false,
             message: 'Server error'
@@ -1199,7 +1284,7 @@ app.post("/api/menu", verifyToken, verifyAdmin, async (req, res) => {
                 itemName: finalItemName,
                 price,
                 category,
-                stock: 999,
+                stock: 50,
                 image: 'default_food.jpg',
                 status: availability.available ? 'available' : 'out_of_stock',
                 description: description || '',
@@ -2468,6 +2553,1033 @@ app.post("/api/recipes/reset", verifyToken, verifyAdmin, async (req, res) => {
         });
     }
 });
+
+// ==================== DASHBOARD API ENDPOINTS ====================
+
+// Get comprehensive dashboard data (all data in one request)
+app.get("/api/dashboard/data", verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        const limit = parseInt(req.query.limit) || 100;
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        // Fetch all data in parallel
+        const [
+            orders,
+            customers,
+            inventoryItems,
+            menuItems,
+            topSellingProducts,
+            stats
+        ] = await Promise.all([
+            Order.find().sort({ createdAt: -1 }).limit(limit).lean(),
+            Customer.find().sort({ lastOrderDate: -1 }).limit(limit).lean(),
+            InventoryItem.find({ isActive: true }).sort({ itemName: 1 }).lean(),
+            MenuItem.find({ isActive: true }).sort({ itemName: 1 }).lean(),
+            Order.aggregate([
+                { $unwind: '$items' },
+                { 
+                    $group: { 
+                        _id: '$items.name',
+                        name: { $first: '$items.name' },
+                        totalQuantity: { $sum: '$items.quantity' },
+                        totalRevenue: { $sum: { $multiply: ['$items.price', '$items.quantity'] } },
+                        averagePrice: { $avg: '$items.price' }
+                    }
+                },
+                { $sort: { totalRevenue: -1 } },
+                { $limit: 10 }
+            ]),
+            getDashboardStats()
+        ]);
+
+        res.json({
+            success: true,
+            data: {
+                orders,
+                customers,
+                inventoryItems,
+                menuItems,
+                topSellingProducts,
+                stats
+            }
+        });
+    } catch (error) {
+        console.error('Error fetching dashboard data:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
+});
+
+// Get all orders
+app.get("/api/orders", verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        const { page = 1, limit = 50, search = '' } = req.query;
+        const skip = (parseInt(page) - 1) * parseInt(limit);
+        
+        let query = {};
+        if (search) {
+            query.orderNumber = { $regex: search, $options: 'i' };
+        }
+        
+        const orders = await Order.find(query)
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(parseInt(limit))
+            .lean();
+        
+        const total = await Order.countDocuments(query);
+        
+        res.json({
+            success: true,
+            data: orders,
+            pagination: {
+                page: parseInt(page),
+                limit: parseInt(limit),
+                total,
+                pages: Math.ceil(total / parseInt(limit))
+            }
+        });
+    } catch (error) {
+        console.error('Error fetching orders:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: error.message 
+        });
+    }
+});
+
+// Get today's orders
+app.get("/api/orders/today", verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        const { limit = 20 } = req.query;
+        
+        const today = new Date();
+        const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0, 0);
+        const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999);
+        
+        const orders = await Order.find({
+            createdAt: { $gte: startOfDay, $lte: endOfDay }
+        })
+            .sort({ createdAt: -1 })
+            .limit(parseInt(limit))
+            .lean();
+        
+        res.json({
+            success: true,
+            data: orders || []
+        });
+    } catch (error) {
+        console.error('Error fetching today\'s orders:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: error.message,
+            data: []
+        });
+    }
+});
+
+// Get dashboard stats
+app.get("/api/stats", verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        const stats = await getDashboardStats();
+        res.json({ success: true, data: stats });
+    } catch (error) {
+        console.error('Error fetching stats:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: error.message 
+        });
+    }
+});
+
+// API endpoint aliases for admin dashboard compatibility
+app.get("/api/admin/dashboard/stats", verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        const stats = await getDashboardStats();
+        res.json({ success: true, data: stats });
+    } catch (error) {
+        console.error('Error fetching stats:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: error.message 
+        });
+    }
+});
+
+app.get("/api/admin/orders/today", verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        const { limit = 20 } = req.query;
+        
+        const today = new Date();
+        const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0, 0);
+        const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999);
+        
+        const orders = await Order.find({
+            createdAt: { $gte: startOfDay, $lte: endOfDay }
+        })
+            .sort({ createdAt: -1 })
+            .limit(parseInt(limit))
+            .lean();
+        
+        res.json({
+            success: true,
+            data: orders || []
+        });
+    } catch (error) {
+        console.error('Error fetching today\'s orders:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: error.message,
+            data: []
+        });
+    }
+});
+
+app.get("/api/admin/inventory/status", verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        const items = await InventoryItem.find({ itemType: 'raw', isActive: true })
+            .sort({ itemName: 1 })
+            .lean();
+        
+        res.json({ success: true, data: items });
+    } catch (error) {
+        console.error('Error fetching inventory:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: error.message 
+        });
+    }
+});
+
+app.get("/api/admin/menu", verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        const items = await MenuItem.find({ isActive: true })
+            .sort({ itemName: 1 })
+            .lean();
+        
+        res.json({ success: true, data: items });
+    } catch (error) {
+        console.error('Error fetching menu:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: error.message 
+        });
+    }
+});
+
+// Get top selling products
+app.get("/api/orders/top-selling", verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        const topSelling = await Order.aggregate([
+            { $unwind: '$items' },
+            { $group: { 
+                _id: '$items.name',
+                name: { $first: '$items.name' },
+                totalQuantity: { $sum: '$items.quantity' },
+                totalRevenue: { $sum: { $multiply: ['$items.price', '$items.quantity'] } },
+                averagePrice: { $avg: '$items.price' }
+            }},
+            { $sort: { totalRevenue: -1 } },
+            { $limit: 10 }
+        ]);
+        
+        res.json({ success: true, data: topSelling });
+    } catch (error) {
+        console.error('Error fetching top selling:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: error.message 
+        });
+    }
+});
+
+// Get all menu items
+app.get("/api/menu-list", verifyToken, async (req, res) => {
+    try {
+        const menuItems = await MenuItem.find({ isActive: true })
+            .sort({ itemName: 1 })
+            .lean();
+        
+        res.json({ success: true, data: menuItems });
+    } catch (error) {
+        console.error('Error fetching menu:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: error.message 
+        });
+    }
+});
+
+// Get inventory list (alias for dashboard)
+app.get("/api/inventory-list", verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        const items = await InventoryItem.find({ itemType: 'raw' })
+            .sort({ itemName: 1 })
+            .lean();
+        
+        res.json({ success: true, data: items });
+    } catch (error) {
+        console.error('Error fetching inventory list:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: error.message 
+        });
+    }
+});
+
+// ==================== STOCK REQUEST MANAGEMENT ENDPOINTS ====================
+
+// Get all pending stock requests (for menu management)
+app.get("/api/stock-requests/pending", verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        const pendingRequests = await StockRequest.find({ status: 'pending' })
+            .sort({ createdAt: -1 })
+            .lean();
+        
+        res.json({ success: true, data: pendingRequests });
+    } catch (error) {
+        console.error('Error fetching pending stock requests:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: error.message 
+        });
+    }
+});
+
+// Get all stock requests with different statuses
+app.get("/api/stock-requests/all", verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        const { status = 'all', limit = 50, page = 1 } = req.query;
+        const skip = (parseInt(page) - 1) * parseInt(limit);
+        
+        let query = {};
+        if (status !== 'all') {
+            query.status = status;
+        }
+        
+        const requests = await StockRequest.find(query)
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(parseInt(limit))
+            .lean();
+        
+        const total = await StockRequest.countDocuments(query);
+        
+        res.json({ 
+            success: true, 
+            data: requests,
+            pagination: {
+                page: parseInt(page),
+                limit: parseInt(limit),
+                total,
+                pages: Math.ceil(total / parseInt(limit))
+            }
+        });
+    } catch (error) {
+        console.error('Error fetching stock requests:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: error.message 
+        });
+    }
+});
+
+// Get single stock request
+app.get("/api/stock-requests/:id", verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        const request = await StockRequest.findById(req.params.id).lean();
+        
+        if (!request) {
+            return res.status(404).json({ 
+                success: false, 
+                message: 'Stock request not found' 
+            });
+        }
+        
+        res.json({ success: true, data: request });
+    } catch (error) {
+        console.error('Error fetching stock request:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: error.message 
+        });
+    }
+});
+
+// Approve/Update stock request status
+app.put("/api/stock-requests/:id/status", verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        const { status, notes } = req.body;
+        
+        if (!status || !['pending', 'approved', 'rejected', 'completed'].includes(status)) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Invalid status' 
+            });
+        }
+        
+        const request = await StockRequest.findByIdAndUpdate(
+            req.params.id,
+            { 
+                status,
+                notes: notes || undefined,
+                updatedAt: new Date()
+            },
+            { new: true }
+        );
+        
+        if (!request) {
+            return res.status(404).json({ 
+                success: false, 
+                message: 'Stock request not found' 
+            });
+        }
+        
+        res.json({ success: true, message: `Stock request ${status}`, data: request });
+    } catch (error) {
+        console.error('Error updating stock request:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: error.message 
+        });
+    }
+});
+
+// Fulfill stock request (approve and add to inventory)
+app.post("/api/stock-requests/:id/fulfill", verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        const { quantity } = req.body;
+        
+        const request = await StockRequest.findById(req.params.id);
+        
+        if (!request) {
+            return res.status(404).json({ 
+                success: false, 
+                message: 'Stock request not found' 
+            });
+        }
+        
+        const fulfillQuantity = quantity || request.requestedQuantity;
+        
+        // Find inventory item and update stock
+        const inventoryItem = await InventoryItem.findById(request.inventoryItemId);
+        
+        if (inventoryItem) {
+            inventoryItem.currentStock += fulfillQuantity;
+            inventoryItem.restockHistory.push({
+                quantity: fulfillQuantity,
+                notes: `Fulfilled from staff request #${request._id}`,
+                addedBy: req.user.id
+            });
+            await inventoryItem.save();
+        }
+        
+        // Update request status
+        request.status = 'completed';
+        request.fulfilledQuantity = fulfillQuantity;
+        request.fulfilledBy = req.user.id;
+        request.fulfilledAt = new Date();
+        await request.save();
+        
+        // Update related menu items
+        if (inventoryItem) {
+            await updateRelatedMenuItems(inventoryItem.itemName);
+        }
+        
+        await sendStatsUpdate();
+        
+        res.json({ 
+            success: true, 
+            message: 'Stock request fulfilled',
+            data: request 
+        });
+    } catch (error) {
+        console.error('Error fulfilling stock request:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: error.message 
+        });
+    }
+});
+
+// Bulk update all stock to 0 - Out of Stock
+app.post("/api/stock/set-all-zero", verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        // Update all Products stock to 0
+        const productResult = await Product.updateMany(
+            {},
+            { stock: 0 },
+            { runValidators: false }
+        );
+
+        // Update all InventoryItems currentStock to 0
+        const inventoryResult = await InventoryItem.updateMany(
+            {},
+            { currentStock: 0 },
+            { runValidators: false }
+        );
+
+        await sendStatsUpdate();
+
+        res.json({
+            success: true,
+            message: 'All stock set to 0 (out of stock)',
+            data: {
+                productsUpdated: productResult.modifiedCount,
+                inventoryItemsUpdated: inventoryResult.modifiedCount
+            }
+        });
+    } catch (error) {
+        console.error('Error setting all stock to 0:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
+});
+
+// ==================== MISSING ADMIN ENDPOINTS ====================
+
+// Analytics: Top Selling Items
+app.get("/api/admin/analytics/top-items", verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        const topItems = await Order.aggregate([
+            { $unwind: '$items' },
+            { $group: { 
+                _id: '$items.name',
+                name: { $first: '$items.name' },
+                totalQuantity: { $sum: '$items.quantity' },
+                totalRevenue: { $sum: { $multiply: ['$items.price', '$items.quantity'] } },
+                averagePrice: { $avg: '$items.price' }
+            }},
+            { $sort: { totalRevenue: -1 } },
+            { $limit: 5 }
+        ]);
+        
+        res.json({ success: true, data: topItems });
+    } catch (error) {
+        console.error('Error fetching top selling items:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: error.message,
+            data: []
+        });
+    }
+});
+
+// Analytics: Sales by Period
+app.get("/api/admin/analytics/sales", verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        const { period = 'daily' } = req.query;
+        let groupBy;
+        let dateFormat;
+
+        switch (period) {
+            case 'weekly':
+                dateFormat = { $week: '$createdAt' };
+                groupBy = { $dateToString: { format: "%Y-W%V", date: "$createdAt" } };
+                break;
+            case 'monthly':
+                dateFormat = { $month: '$createdAt' };
+                groupBy = { $dateToString: { format: "%Y-%m", date: "$createdAt" } };
+                break;
+            case 'daily':
+            default:
+                dateFormat = { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } };
+                groupBy = dateFormat;
+        }
+
+        const salesData = await Order.aggregate([
+            { $group: {
+                _id: groupBy,
+                revenue: { $sum: '$total' },
+                count: { $sum: 1 },
+                averageOrderValue: { $avg: '$total' }
+            }},
+            { $sort: { _id: 1 } }
+        ]);
+
+        res.json({ success: true, data: salesData, period });
+    } catch (error) {
+        console.error('Error fetching sales analytics:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: error.message,
+            data: []
+        });
+    }
+});
+
+// Inventory CRUD Aliases
+app.get("/api/admin/inventory", verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        const items = await InventoryItem.find({ itemType: 'raw', isActive: true })
+            .sort({ itemName: 1 })
+            .lean();
+        
+        res.json({ success: true, data: items });
+    } catch (error) {
+        console.error('Error fetching inventory:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: error.message 
+        });
+    }
+});
+
+app.post("/api/admin/inventory", verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        const { itemName, category, currentStock = 0, minStock = 5, itemType = 'raw', unit = 'kg', maxStock = 100 } = req.body;
+        
+        if (!itemName || !category) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Item name and category are required' 
+            });
+        }
+
+        const newItem = new InventoryItem({
+            itemName,
+            category,
+            currentStock,
+            minStock,
+            itemType,
+            unit,
+            maxStock,
+            isActive: true
+        });
+
+        await newItem.save();
+        res.status(201).json({ success: true, data: newItem });
+    } catch (error) {
+        console.error('Error creating inventory item:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: error.message 
+        });
+    }
+});
+
+app.put("/api/admin/inventory/:id", verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const updateData = req.body;
+        
+        const updatedItem = await InventoryItem.findByIdAndUpdate(
+            id,
+            updateData,
+            { new: true, runValidators: true }
+        );
+
+        if (!updatedItem) {
+            return res.status(404).json({ 
+                success: false, 
+                message: 'Inventory item not found' 
+            });
+        }
+
+        res.json({ success: true, data: updatedItem });
+    } catch (error) {
+        console.error('Error updating inventory item:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: error.message 
+        });
+    }
+});
+
+app.delete("/api/admin/inventory/:id", verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+        
+        const deletedItem = await InventoryItem.findByIdAndUpdate(
+            id,
+            { isActive: false },
+            { new: true }
+        );
+
+        if (!deletedItem) {
+            return res.status(404).json({ 
+                success: false, 
+                message: 'Inventory item not found' 
+            });
+        }
+
+        res.json({ success: true, data: deletedItem, message: 'Item deactivated successfully' });
+    } catch (error) {
+        console.error('Error deleting inventory item:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: error.message 
+        });
+    }
+});
+
+// Menu Management Aliases
+app.post("/api/admin/menu", verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        const { itemName, category, description = '', price, image = '/images/default_food.jpg', isAvailable = true } = req.body;
+        
+        if (!itemName || !category || !price) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Item name, category, and price are required' 
+            });
+        }
+
+        const newItem = new MenuItem({
+            itemName,
+            category,
+            description,
+            price,
+            image,
+            isAvailable,
+            isActive: true
+        });
+
+        await newItem.save();
+        res.status(201).json({ success: true, data: newItem });
+    } catch (error) {
+        console.error('Error creating menu item:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: error.message 
+        });
+    }
+});
+
+app.put("/api/admin/menu/:id", verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const updateData = req.body;
+        
+        const updatedItem = await MenuItem.findByIdAndUpdate(
+            id,
+            updateData,
+            { new: true, runValidators: true }
+        );
+
+        if (!updatedItem) {
+            return res.status(404).json({ 
+                success: false, 
+                message: 'Menu item not found' 
+            });
+        }
+
+        res.json({ success: true, data: updatedItem });
+    } catch (error) {
+        console.error('Error updating menu item:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: error.message 
+        });
+    }
+});
+
+app.delete("/api/admin/menu/:id", verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+        
+        const deletedItem = await MenuItem.findByIdAndUpdate(
+            id,
+            { isActive: false },
+            { new: true }
+        );
+
+        if (!deletedItem) {
+            return res.status(404).json({ 
+                success: false, 
+                message: 'Menu item not found' 
+            });
+        }
+
+        res.json({ success: true, data: deletedItem, message: 'Item deactivated successfully' });
+    } catch (error) {
+        console.error('Error deleting menu item:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: error.message 
+        });
+    }
+});
+
+// Staff Management Endpoints
+app.get("/api/admin/staff", verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        const staff = await User.find({ role: 'staff' })
+            .select('-password')
+            .sort({ createdAt: -1 })
+            .lean();
+        
+        res.json({ success: true, data: staff });
+    } catch (error) {
+        console.error('Error fetching staff:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: error.message,
+            data: []
+        });
+    }
+});
+
+app.post("/api/admin/staff", verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        const { username, email, password, role = 'staff', status = 'active' } = req.body;
+        
+        if (!username || !email || !password) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Username, email, and password are required' 
+            });
+        }
+
+        const existingUser = await User.findOne({ email });
+        if (existingUser) {
+            return res.status(409).json({ 
+                success: false, 
+                message: 'Email already exists' 
+            });
+        }
+
+        const hashedPassword = await bcrypt.hash(password, 10);
+        
+        const newStaff = new User({
+            username,
+            email,
+            password: hashedPassword,
+            role,
+            status
+        });
+
+        await newStaff.save();
+        
+        const staffData = newStaff.toObject();
+        delete staffData.password;
+        
+        res.status(201).json({ success: true, data: staffData });
+    } catch (error) {
+        console.error('Error creating staff:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: error.message 
+        });
+    }
+});
+
+app.put("/api/admin/staff/:id", verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { username, email, role, status, password } = req.body;
+        
+        const updateData = { username, email, role, status };
+        
+        if (password) {
+            updateData.password = await bcrypt.hash(password, 10);
+        }
+        
+        const updatedStaff = await User.findByIdAndUpdate(
+            id,
+            updateData,
+            { new: true, runValidators: true }
+        ).select('-password');
+
+        if (!updatedStaff) {
+            return res.status(404).json({ 
+                success: false, 
+                message: 'Staff not found' 
+            });
+        }
+
+        res.json({ success: true, data: updatedStaff });
+    } catch (error) {
+        console.error('Error updating staff:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: error.message 
+        });
+    }
+});
+
+app.delete("/api/admin/staff/:id", verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+        
+        const deletedStaff = await User.findByIdAndUpdate(
+            id,
+            { status: 'inactive' },
+            { new: true }
+        ).select('-password');
+
+        if (!deletedStaff) {
+            return res.status(404).json({ 
+                success: false, 
+                message: 'Staff not found' 
+            });
+        }
+
+        res.json({ success: true, data: deletedStaff, message: 'Staff deactivated successfully' });
+    } catch (error) {
+        console.error('Error deleting staff:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: error.message 
+        });
+    }
+});
+
+// Sales Reports Endpoints
+app.get("/api/admin/reports/sales", verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        const { startDate, endDate, category } = req.query;
+        
+        const filter = {};
+        
+        if (startDate || endDate) {
+            filter.createdAt = {};
+            if (startDate) {
+                filter.createdAt.$gte = new Date(startDate);
+            }
+            if (endDate) {
+                filter.createdAt.$lte = new Date(endDate);
+            }
+        }
+
+        const orders = await Order.find(filter).lean();
+        
+        let report = {
+            totalOrders: orders.length,
+            totalRevenue: 0,
+            totalItems: 0,
+            categoryBreakdown: {},
+            orders: []
+        };
+
+        orders.forEach(order => {
+            report.totalRevenue += order.total || 0;
+            
+            if (order.items && Array.isArray(order.items)) {
+                order.items.forEach(item => {
+                    report.totalItems += item.quantity || 0;
+                    const cat = item.category || 'Unknown';
+                    
+                    if (!report.categoryBreakdown[cat]) {
+                        report.categoryBreakdown[cat] = { count: 0, revenue: 0 };
+                    }
+                    report.categoryBreakdown[cat].count += item.quantity || 0;
+                    report.categoryBreakdown[cat].revenue += (item.price * item.quantity) || 0;
+                });
+            }
+        });
+
+        if (category) {
+            report.orders = orders.filter(order => 
+                order.items && order.items.some(item => item.category === category)
+            );
+        }
+
+        res.json({ success: true, data: report });
+    } catch (error) {
+        console.error('Error generating sales report:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: error.message,
+            data: {}
+        });
+    }
+});
+
+app.post("/api/admin/reports/export", verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        const { reportType = 'csv', startDate, endDate } = req.body;
+        
+        const filter = {};
+        if (startDate || endDate) {
+            filter.createdAt = {};
+            if (startDate) filter.createdAt.$gte = new Date(startDate);
+            if (endDate) filter.createdAt.$lte = new Date(endDate);
+        }
+
+        const orders = await Order.find(filter).lean();
+
+        if (reportType === 'csv') {
+            // Simple CSV export
+            let csv = 'Order ID,Date,Total,Items,Status\n';
+            orders.forEach(order => {
+                const itemCount = order.items ? order.items.length : 0;
+                csv += `${order._id},${new Date(order.createdAt).toISOString()},${order.total},${itemCount},${order.status || 'pending'}\n`;
+            });
+            
+            res.setHeader('Content-Type', 'text/csv');
+            res.setHeader('Content-Disposition', 'attachment; filename=sales_report.csv');
+            res.send(csv);
+        } else {
+            // JSON export
+            res.json({ success: true, data: orders });
+        }
+    } catch (error) {
+        console.error('Error exporting report:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: error.message 
+        });
+    }
+});
+
+// Order Management Endpoints
+app.post("/api/admin/orders/:id/complete", verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+        
+        const order = await Order.findByIdAndUpdate(
+            id,
+            { status: 'completed', completedAt: new Date() },
+            { new: true }
+        );
+
+        if (!order) {
+            return res.status(404).json({ 
+                success: false, 
+                message: 'Order not found' 
+            });
+        }
+
+        res.json({ success: true, data: order, message: 'Order marked as completed' });
+    } catch (error) {
+        console.error('Error completing order:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: error.message 
+        });
+    }
+});
+
+app.get("/api/admin/orders/:id", verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+        
+        const order = await Order.findById(id).lean();
+
+        if (!order) {
+            return res.status(404).json({ 
+                success: false, 
+                message: 'Order not found' 
+            });
+        }
+
+        res.json({ success: true, data: order });
+    } catch (error) {
+        console.error('Error fetching order:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: error.message 
+        });
+    }
+});
+
+// ==================== END MISSING ADMIN ENDPOINTS ====================
 
 app.get("/logout", (req, res) => {
     res.clearCookie("token");

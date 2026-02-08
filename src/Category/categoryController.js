@@ -1,4 +1,4 @@
-const Category = require('../../models/categoryModel');
+import { Category } from '../../config/database.js';
 
 const getDataControllerFn = async (req, res) => {
     try {
@@ -19,4 +19,4 @@ const createCategoryControllerFn = async (req, res) => {
     }
 };
 
-module.exports = { getDataControllerFn, createCategoryControllerFn };
+export { getDataControllerFn, createCategoryControllerFn };

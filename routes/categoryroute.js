@@ -1,30 +1,32 @@
 import express from "express";
+import { Category } from "../config/database.js";
 
 const router = express.Router();
 
+router.post("/Create", async (req, res) => {
+    try {
+        const { name } = req.body;
 
-let categories = [];
+        if (!name) {
+            return res.status(400).json({ message: "Category name is required" });
+        }
 
-router.post("/Create", (req, res) => {
-    const { name } = req.body;
+        const newCategory = new Category({ name, isActive: true });
+        await newCategory.save();
 
-    if (!name) {
-        return res.status(400).json({ message: "Category name is required" });
+        res.status(201).json(newCategory);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
     }
-
-    const newCategory = {
-        id: categories.length + 1,
-        name,
-    };
-
-    categories.push(newCategory);
-
-    res.status(201).json(newCategory);
 });
 
-
-router.get("/getAll", (req, res) => {
-    res.json(categories);
+router.get("/getAll", async (req, res) => {
+    try {
+        const categories = await Category.find();
+        res.json(categories);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
 });
 
 export default router;

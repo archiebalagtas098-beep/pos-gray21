@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <link rel="stylesheet" href="/dashboard.css">
 <title>Admin Dashboard</title>
 </head>
@@ -74,12 +75,12 @@
 
         <div class="stat-card">
           <h3>Total Inventory</h3>
-          <p id="totalProducts"><%= stats.totalProducts || 0 %></p>
+          <p id="totalProducts"><%= stats.totalInventoryItems || stats.totalProducts || 0 %></p>
         </div>
 
         <div class="stat-card">
           <h3>Total Menu</h3>
-         <h2 id="totalMenuItems"><%= stats.totalMenuItems || 0 %></h2>
+          <p id="totalMenuItems"><%= stats.totalMenuItems || 0 %></p>
         </div>
 
       </section>
@@ -148,7 +149,7 @@
                 <th>Total</th>
               </tr>
             </thead>
-            <tbody id="ordersTableBody">
+            <tbody id="todaysOrdersBody">
               <!-- Data will be loaded here -->
             </tbody>
           </table>

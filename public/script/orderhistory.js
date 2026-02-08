@@ -179,7 +179,55 @@ async function fetchDashboardStats() {
     try {
         console.log('📊 Fetching dashboard stats...');
         
-        const data = await fetchApi('/api/dashboard/stats');
+        // Try multiple endpoints to get stats
+        let data = await fetchApi('/api/stats');
+        
+        // If /api/stats fails, try building stats from orders API
+        if (!data || !data.success) {
+            console.warn('⚠️ /api/stats endpoint failed, fetching data separately');
+            
+            // Fetch orders to calculate stats
+            const ordersData = await fetchApi('/api/orders?limit=1000&page=1');
+            const customersData = await fetchApi('/api/customers?limit=100');
+            
+            if (ordersData && ordersData.success && Array.isArray(ordersData.data)) {
+                const orders = ordersData.data;
+                
+                // Calculate stats from orders
+                const today = new Date();
+                const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+                const todayEnd = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
+                
+                let totalRevenue = 0;
+                let todaysRevenue = 0;
+                let todaysOrders = 0;
+                
+                orders.forEach(order => {
+                    const orderTotal = parseFloat(order.total || 0);
+                    totalRevenue += orderTotal;
+                    
+                    const orderDate = new Date(order.createdAt || order.date);
+                    if (orderDate >= todayStart && orderDate < todayEnd) {
+                        todaysOrders++;
+                        todaysRevenue += orderTotal;
+                    }
+                });
+                
+                data = {
+                    success: true,
+                    data: {
+                        totalOrders: orders.length,
+                        totalRevenue: totalRevenue,
+                        todaysOrders: todaysOrders,
+                        todaysRevenue: todaysRevenue,
+                        totalCustomers: customersData?.data?.length || 0,
+                        totalMenuItems: 0,
+                        inventoryLowStock: 0,
+                        inventoryOutOfStock: 0
+                    }
+                };
+            }
+        }
         
         if (data && data.success && data.data) {
             // Check if stats have changed
@@ -188,10 +236,17 @@ async function fetchDashboardStats() {
             // Update dashboard stats
             dashboardData.stats = {
                 ...dashboardData.stats,
-                ...data.data
+                totalOrders: data.data.totalOrders || 0,
+                totalRevenue: data.data.totalRevenue || 0,
+                todaysOrders: data.data.todaysOrders || 0,
+                todaysRevenue: data.data.todaysRevenue || 0,
+                totalCustomers: data.data.totalCustomers || 0,
+                totalProducts: data.data.totalMenuItems || 0,
+                inventoryLowStock: data.data.inventoryLowStock || 0,
+                inventoryOutOfStock: data.data.inventoryOutOfStock || 0
             };
             
-            console.log('📊 Stats loaded:', dashboardData.stats);
+            console.log('✅ Stats loaded:', dashboardData.stats);
             
             // Update UI if stats changed
             if (statsChanged) {
@@ -297,9 +352,35 @@ async function loadOrders() {
     try {
         console.log('📋 Loading orders...');
         
-        const data = await fetchApi('/api/orders/today?limit=20');
+        // Try to fetch today's orders
+        let data = await fetchApi('/api/orders/today?limit=20');
         
-        if (data && data.success && data.data) {
+        // Fallback: if today's orders endpoint fails, fetch all orders and filter
+        if (!data || !data.success || !data.data) {
+            console.warn('⚠️ /api/orders/today failed, trying /api/orders');
+            data = await fetchApi('/api/orders?limit=50&page=1');
+            
+            if (data && data.success && data.data) {
+                // Filter to only today's orders
+                const today = new Date();
+                const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0, 0);
+                const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999);
+                
+                console.log(`🔍 Filtering orders from ${startOfDay} to ${endOfDay}`);
+                data.data = data.data.filter(order => {
+                    const orderDate = new Date(order.createdAt);
+                    return orderDate >= startOfDay && orderDate <= endOfDay;
+                });
+                console.log(`✅ Filtered ${data.data.length} orders for today`);
+            }
+        }
+        
+        if (data && data.success && data.data && Array.isArray(data.data)) {
+            console.log('📊 Orders data received:', {
+                count: data.data.length,
+                sample: data.data[0] || 'No orders'
+            });
+            
             // Check if orders have changed
             const ordersChanged = hasOrdersChanged(data.data);
             
@@ -310,6 +391,8 @@ async function loadOrders() {
                 if (data.data.length > 0) {
                     showUpdateNotification('New orders loaded');
                 }
+            } else {
+                console.log('ℹ️ No new orders, skipping table update');
             }
         } else {
             console.log('⚠️ No orders data from API');
@@ -346,7 +429,11 @@ function hasOrdersChanged(newOrders) {
 }
 
 function updateOrdersTable() {
-    const tableBody = document.getElementById('ordersTableBody');
+    // Try both possible IDs for today's orders
+    let tableBody = document.getElementById('todaysOrdersBody');
+    if (!tableBody) {
+        tableBody = document.getElementById('ordersTableBody');
+    }
     if (!tableBody) return;
     
     // Clear table
@@ -363,16 +450,25 @@ function updateOrdersTable() {
         return;
     }
     
-    // Add orders to table
-    dashboardData.orders.forEach((order, index) => {
+    // Add orders to table (limited to 5 for today's orders section)
+    const ordersToDisplay = dashboardData.orders.slice(0, 5);
+    ordersToDisplay.forEach((order, index) => {
         const row = document.createElement('tr');
         const orderTime = new Date(order.createdAt || Date.now());
         const timeString = orderTime.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
         
+        // Get customer display name - try multiple fields
+        let customerDisplay = 'Walk-in Customer';
+        if (order.customerName) {
+            customerDisplay = order.customerName;
+        } else if (order.customerId) {
+            customerDisplay = typeof order.customerId === 'string' ? order.customerId.substring(0, 8) : 'Customer';
+        }
+        
         row.innerHTML = `
             <td>${order.orderNumber || 'N/A'}</td>
             <td>${timeString}</td>
-            <td>${order.customerName || 'Walk-in Customer'}</td>
+            <td>${customerDisplay}</td>
             <td>${formatCurrency(order.total || order.totalAmount || 0)}</td>
         `;
         
@@ -396,9 +492,15 @@ async function loadTopProducts() {
     try {
         console.log('📈 Loading top products...');
         
-        const data = await fetchApi('/api/products/top?limit=10');
+        // Try multiple endpoints for top products
+        let data = await fetchApi('/api/orders/top-selling?limit=10');
         
-        if (data && data.success && data.data) {
+        if (!data || !data.success) {
+            console.warn('⚠️ Failed to load top products, trying alternative endpoint');
+            data = await fetchApi('/api/products?limit=10');
+        }
+        
+        if (data && data.success && Array.isArray(data.data)) {
             // Check if top products have changed
             const productsChanged = hasTopProductsChanged(data.data);
             
@@ -465,12 +567,15 @@ function updateTopProductsTable() {
     // Add products to table
     dashboardData.topProducts.forEach((product, index) => {
         const row = document.createElement('tr');
-        const statusClass = `status-${product.status || 'normal'}`;
-        const statusText = (product.status || 'normal').charAt(0).toUpperCase() + (product.status || 'normal').slice(1);
+        // Use 'name' from aggregation, or '_id' as fallback
+        const productName = product.name || product._id || 'Unknown Product';
+        const totalSales = product.totalRevenue || product.revenue || 0;
+        const statusClass = 'status-normal';
+        const statusText = 'Normal';
         
         row.innerHTML = `
-            <td>${product.name || 'Unknown Product'}</td>
-            <td>${formatCurrency(product.revenue || product.totalRevenue || 0)}</td>
+            <td>${productName}</td>
+            <td>${formatCurrency(totalSales)}</td>
             <td><span class="status-badge ${statusClass}">${statusText}</span></td>
         `;
         
@@ -532,7 +637,11 @@ function hasInventoryChanged(newInventory) {
 }
 
 function updateInventoryTable() {
-    const tableBody = document.getElementById('inventoryTableBody');
+    // Try both possible IDs
+    let tableBody = document.getElementById('inventoryTableBody');
+    if (!tableBody) {
+        tableBody = document.getElementById('inventoryStatusBody');
+    }
     if (!tableBody) return;
     
     // Clear table
@@ -560,13 +669,29 @@ function updateInventoryTable() {
     // Add inventory items to table
     sortedInventory.forEach((item, index) => {
         const row = document.createElement('tr');
-        const statusClass = `status-${item.status || 'in-stock'}`;
-        const statusText = item.status === 'in-stock' ? 'In Stock' : 
-                          item.status === 'low-stock' ? 'Low Stock' : 'Out of Stock';
+        // Determine stock status
+        let status = 'in-stock';
+        let statusText = 'In Stock';
+        
+        const currentStock = item.currentStock || item.stock || 0;
+        const minStock = item.minStock || 0;
+        
+        if (currentStock === 0) {
+            status = 'out-of-stock';
+            statusText = 'Out of Stock';
+        } else if (currentStock < minStock) {
+            status = 'low-stock';
+            statusText = 'Low Stock';
+        }
+        
+        const itemName = item.itemName || item.name || 'Unknown Item';
+        const unit = item.unit || 'unit';
+        const stockDisplay = `${formatNumber(currentStock)} ${unit}`;
+        const statusClass = `status-${status}`;
         
         row.innerHTML = `
-            <td>${item.name || 'Unknown Item'}</td>
-            <td>${formatNumber(item.stock || 0)} ${item.unit || 'unit'}</td>
+            <td>${itemName}</td>
+            <td>${stockDisplay}</td>
             <td><span class="status-badge ${statusClass}">${statusText}</span></td>
         `;
         

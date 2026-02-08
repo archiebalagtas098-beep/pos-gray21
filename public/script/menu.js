@@ -1106,6 +1106,8 @@ function showSection(section) {
         renderDashboardGrid();
     } else if (section === 'menu') {
         renderMenuGrid();
+    } else if (section === 'viewstock') {
+        loadPendingStockRequests();
     }
 }
 
@@ -1231,6 +1233,9 @@ function renderMenuGrid() {
                         ${currentStock === 0 ? 'Out of Stock' : currentStock <= minStock ? 'Low Stock' : 'In Stock'}
                     </span>
                 </div>
+            </div>
+            <div class="card-footer">
+                <button class="btn-transfer" onclick="openTransferModal('${item._id}', '${itemName}', ${currentStock}, '${displayUnit}')">📤 Transfer Stock</button>
             </div>
         </div>
         `;
@@ -1910,6 +1915,259 @@ function updateAllUIComponents() {
     console.log('✅ All UI components updated');
 }
 
+// ==================== STOCK REQUEST MANAGEMENT ====================
+
+async function loadPendingStockRequests() {
+    try {
+        console.log('📦 Loading pending stock requests...');
+        
+        const response = await fetch('/api/stock-requests/pending', {
+            credentials: 'include'
+        });
+        
+        if (!response.ok) {
+            throw new Error('Failed to load stock requests');
+        }
+        
+        const result = await response.json();
+        const requests = result.data || [];
+        
+        console.log('Received requests:', requests);
+        
+        const tableBody = document.getElementById('stockRequestsTableBody');
+        const emptyState = document.getElementById('emptyStockState');
+        
+        if (requests.length === 0) {
+            tableBody.innerHTML = '';
+            emptyState.style.display = 'block';
+            return;
+        }
+        
+        emptyState.style.display = 'none';
+        tableBody.innerHTML = requests.map(req => `
+            <tr>
+                <td><strong>${req.productName || 'Unknown'}</strong></td>
+                <td>${req.requestedQuantity || 0}</td>
+                <td><span class="priority-badge priority-${req.priority || 'medium'}">${(req.priority || 'medium').toUpperCase()}</span></td>
+                <td>${req.requestedBy || 'System'}</td>
+                <td>${new Date(req.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</td>
+                <td><span class="status-badge status-${req.status || 'pending'}">${(req.status || 'pending').toUpperCase()}</span></td>
+                <td>
+                    <button class="btn-action" onclick="viewStockDetail('${req._id}')" title="View Details">👁️ View</button>
+                    ${req.status === 'pending' ? `
+                        <button class="btn-action" onclick="approveStockRequest('${req._id}')" title="Approve" style="color: green;">✓ Approve</button>
+                    ` : ''}
+                </td>
+            </tr>
+        `).join('');
+        
+        // Update badge
+        const pendingBadge = document.getElementById('pendingStockBadge');
+        if (pendingBadge && requests.length > 0) {
+            pendingBadge.textContent = requests.length;
+            pendingBadge.style.display = 'flex';
+        }
+        
+    } catch (error) {
+        console.error('Error loading stock requests:', error);
+        const tableBody = document.getElementById('stockRequestsTableBody');
+        tableBody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: red;">Error loading stock requests: ${error.message}</td></tr>`;
+    }
+}
+
+function viewStockDetail(requestId) {
+    try {
+        console.log('👁️ Viewing stock detail:', requestId);
+        
+        fetch(`/api/stock-requests/${requestId}`, {
+            credentials: 'include'
+        })
+        .then(res => res.json())
+        .then(result => {
+            if (result.success) {
+                const req = result.data;
+                
+                // Populate modal
+                document.getElementById('detailProductName').textContent = req.productName || '-';
+                document.getElementById('detailQuantity').textContent = req.requestedQuantity || '-';
+                document.getElementById('detailPriority').textContent = (req.priority || 'medium').toUpperCase();
+                document.getElementById('detailRequestedBy').textContent = req.requestedBy || '-';
+                document.getElementById('detailDateRequested').textContent = new Date(req.createdAt).toLocaleDateString();
+                document.getElementById('detailStatus').textContent = (req.status || 'pending').toUpperCase();
+                document.getElementById('detailNotes').textContent = req.notes || 'No notes';
+                
+                // Show action buttons based on status
+                const actionForm = document.getElementById('actionForm');
+                const fulfillBtn = document.getElementById('fulfillStockBtn');
+                const rejectBtn = document.getElementById('rejectStockBtn');
+                
+                if (req.status === 'pending') {
+                    actionForm.style.display = 'block';
+                    fulfillBtn.style.display = 'block';
+                    fulfillBtn.onclick = () => fulfillStockRequest(requestId);
+                    rejectBtn.style.display = 'block';
+                    rejectBtn.onclick = () => rejectStockRequest(requestId);
+                } else {
+                    actionForm.style.display = 'none';
+                    fulfillBtn.style.display = 'none';
+                    rejectBtn.style.display = 'none';
+                }
+                
+                // Set default fulfill quantity
+                document.getElementById('fulfillQuantity').value = req.requestedQuantity || '';
+                
+                // Show modal
+                document.getElementById('viewStockModal').style.display = 'block';
+                document.getElementById('viewStockModal').dataset.requestId = requestId;
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Error loading request details');
+        });
+    } catch (error) {
+        console.error('Error:', error);
+    }
+}
+
+async function fulfillStockRequest(requestId) {
+    try {
+        const quantity = parseInt(document.getElementById('fulfillQuantity').value) || 0;
+        
+        if (quantity <= 0) {
+            alert('Please enter a valid quantity');
+            return;
+        }
+        
+        const response = await fetch(`/api/stock-requests/${requestId}/fulfill`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            credentials: 'include',
+            body: JSON.stringify({ quantity })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            alert('✅ Stock request fulfilled successfully!');
+            document.getElementById('viewStockModal').style.display = 'none';
+            loadPendingStockRequests();
+        } else {
+            alert('❌ Error fulfilling request: ' + result.message);
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        alert('Error fulfilling request');
+    }
+}
+
+async function rejectStockRequest(requestId) {
+    if (!confirm('Are you sure you want to reject this stock request?')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/stock-requests/${requestId}/status`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            credentials: 'include',
+            body: JSON.stringify({ 
+                status: 'rejected',
+                notes: 'Rejected by admin'
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            alert('✅ Stock request rejected');
+            document.getElementById('viewStockModal').style.display = 'none';
+            loadPendingStockRequests();
+        } else {
+            alert('❌ Error rejecting request: ' + result.message);
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        alert('Error rejecting request');
+    }
+}
+
+async function approveStockRequest(requestId) {
+    try {
+        const response = await fetch(`/api/stock-requests/${requestId}/status`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            credentials: 'include',
+            body: JSON.stringify({ 
+                status: 'approved',
+                notes: 'Approved by admin'
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            alert('✅ Stock request approved');
+            loadPendingStockRequests();
+        } else {
+            alert('❌ Error approving request: ' + result.message);
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        alert('Error approving request');
+    }
+}
+
+// ==================== EVENT LISTENERS FOR STOCK REQUESTS ====================
+
+function setupStockRequestListeners() {
+    const viewStockBtn = document.getElementById('viewStockBtn');
+    if (viewStockBtn) {
+        viewStockBtn.addEventListener('click', () => {
+            showSection('viewstock');
+        });
+    }
+    
+    const refreshStockBtn = document.getElementById('refreshStockRequestsBtn');
+    if (refreshStockBtn) {
+        refreshStockBtn.addEventListener('click', loadPendingStockRequests);
+    }
+    
+    const closeViewStockModal = document.getElementById('closeViewStockModal');
+    if (closeViewStockModal) {
+        closeViewStockModal.addEventListener('click', () => {
+            document.getElementById('viewStockModal').style.display = 'none';
+        });
+    }
+    
+    const cancelViewStockBtn = document.getElementById('cancelViewStockBtn');
+    if (cancelViewStockBtn) {
+        cancelViewStockBtn.addEventListener('click', () => {
+            document.getElementById('viewStockModal').style.display = 'none';
+        });
+    }
+    
+    const filterStatus = document.getElementById('filterStatus');
+    if (filterStatus) {
+        filterStatus.addEventListener('change', () => {
+            loadPendingStockRequests();
+        });
+    }
+}
+
+// Call setup on page load
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', setupStockRequestListeners);
+} else {
+    setupStockRequestListeners();
+}
+
 // ==================== GLOBAL EXPORTS ====================
 window.handleLogout = handleLogout;
 window.openAddModal = openAddModal;
@@ -1919,5 +2177,10 @@ window.handleSendStock = handleSendStock;
 window.updateStockTransferSummary = updateStockTransferSummary;
 window.toggleNotificationModal = toggleNotificationModal;
 window.clearAllNotifications = clearAllNotifications;
+window.viewStockDetail = viewStockDetail;
+window.fulfillStockRequest = fulfillStockRequest;
+window.rejectStockRequest = rejectStockRequest;
+window.approveStockRequest = approveStockRequest;
+window.loadPendingStockRequests = loadPendingStockRequests;
 
 console.log('✅ Menu Management System loaded successfully');

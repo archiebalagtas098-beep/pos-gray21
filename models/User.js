@@ -1,5 +1,5 @@
-const mongoose = require('mongoose');
-const bcrypt = require('bcrypt');
+import mongoose from 'mongoose';
+import bcrypt from 'bcrypt';
 
 const userSchema = new mongoose.Schema({
     username: {
@@ -72,7 +72,7 @@ userSchema.methods.comparePassword = async function(enteredPassword) {
     return await bcrypt.compare(enteredPassword, this.password);
 };
 
-// NEW: Simple method to check if user is admin
+// Simple method to check if user is admin
 userSchema.methods.isAdmin = function() {
     return this.role === 'Admin';
 };
@@ -84,6 +84,6 @@ userSchema.methods.toJSON = function() {
     return obj;
 };
 
-const User = mongoose.model('User', userSchema);
+const User = mongoose.models.User || mongoose.model('User', userSchema);
 
-module.exports = User;
+export default User;
